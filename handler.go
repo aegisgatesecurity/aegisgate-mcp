@@ -635,30 +635,39 @@ func validateToolNotPoisoned(scanner *ContentScanner, name, desc string, inputSc
 	if scanner == nil {
 		return nil
 	}
+	var patterns []string
+
 	// Scan the description — this is what the LLM sees and can be used
 	// to inject hidden instructions.
 	if desc != "" {
 		findings := scanner.Scan(desc)
 		for _, f := range findings {
 			if f.Pattern.Severity >= SeverityHigh {
-				return &ToolPoisoningError{
-					ToolName: name,
-					Reason:   fmt.Sprintf("description contains %s: %s", f.Pattern.Category, f.Pattern.Name),
-					Patterns: []string{f.Pattern.Name},
-				}
+				patterns = append(patterns, f.Pattern.Name)
 			}
 		}
 	}
+
 	// Scan string values in the inputSchema (descriptions, enums, defaults)
 	if inputSchema != nil {
-		scanSchemaForPoisoning(scanner, inputSchema, name)
+		schemaPatterns := scanSchemaForPoisoning(scanner, inputSchema, name)
+		patterns = append(patterns, schemaPatterns...)
+	}
+
+	if len(patterns) > 0 {
+		return &ToolPoisoningError{
+			ToolName: name,
+			Reason:   "malicious patterns detected in description or inputSchema",
+			Patterns: patterns,
+		}
 	}
 	return nil
 }
 
 // scanSchemaForPoisoning recursively scans string values in a JSON schema
-// for prompt injection patterns. Reports via panic-free error return.
-func scanSchemaForPoisoning(scanner *ContentScanner, schema map[string]interface{}, toolName string) {
+// for prompt injection patterns. Returns a list of detected pattern names.
+func scanSchemaForPoisoning(scanner *ContentScanner, schema map[string]interface{}, toolName string) []string {
+	var patterns []string
 	for key, val := range schema {
 		switch v := val.(type) {
 		case string:
@@ -669,13 +678,30 @@ func scanSchemaForPoisoning(scanner *ContentScanner, schema map[string]interface
 						slog.Warn("tool poisoning detected in inputSchema",
 							"tool", toolName, "field", key,
 							"pattern", f.Pattern.Name, "category", f.Pattern.Category)
+						patterns = append(patterns, f.Pattern.Name)
 					}
 				}
 			}
 		case map[string]interface{}:
-			scanSchemaForPoisoning(scanner, v, toolName)
+			patterns = append(patterns, scanSchemaForPoisoning(scanner, v, toolName)...)
+		case []interface{}:
+			// Scan array elements (e.g. enum values) for injection
+			for _, elem := range v {
+				if s, ok := elem.(string); ok {
+					findings := scanner.Scan(s)
+					for _, f := range findings {
+						if f.Pattern.Severity >= SeverityHigh {
+							slog.Warn("tool poisoning detected in inputSchema array",
+								"tool", toolName, "field", key,
+								"pattern", f.Pattern.Name, "category", f.Pattern.Category)
+							patterns = append(patterns, f.Pattern.Name)
+						}
+					}
+				}
+			}
 		}
 	}
+	return patterns
 }
 
 // ============================================================

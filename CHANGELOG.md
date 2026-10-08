@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `initialize` response capabilities now include `resources` (with
   `subscribe` and `listChanged`) and `prompts` (with `listChanged`)
 - `Stats()` now includes `resources_registered` and `prompts_registered`
-- Test count: 382 (non-CGO) / 386 (CGO), coverage 89.1% (non-CGO) / 90.0% (CGO)
+- Test count: 388 (non-CGO) / 392 (CGO), coverage 90.5% (non-CGO) / 91.2% (CGO)
 
 ### Security
 
