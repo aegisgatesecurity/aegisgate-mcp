@@ -11,8 +11,8 @@ Apache 2.0 · 22 security layers · 30 regex patterns + CharCNN-BiLSTM (v13) ML 
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Go](https://img.shields.io/badge/Go-1.26.6-00ADD8?logo=go)](https://golang.org/)
-[![Version](https://img.shields.io/badge/Version-1.2.2-blue.svg)](#changelog)
-[![Coverage](https://img.shields.io/badge/Coverage-91.2%25-brightgreen.svg)](#test-coverage)
+[![Version](https://img.shields.io/badge/Version-1.3.0-blue.svg)](#changelog)
+[![Coverage](https://img.shields.io/badge/Coverage-91.3%25-brightgreen.svg)](#test-coverage)
 [![Dependencies](https://img.shields.io/badge/Dependencies-Zero-success.svg)](#overview)
 [![Docker](https://img.shields.io/badge/Docker-DebianSlim-135MB-blue.svg)](#docker)
 [![ML](https://img.shields.io/badge/ML-CharCNN--BiLSTM_v13-purple.svg)](#ml-threat-detection-l3)
@@ -81,14 +81,14 @@ dependencies so it can run air-gapped.
 
 | | |
 |---|---|
-| **Version** | 1.2.2 |
+| **Version** | 1.3.0 |
 | **License** | Apache-2.0 |
 | **Go version** | 1.26+ |
 | **Module deps** | Zero (no `require` directives — all third-party code vendored) |
 | **Docker image** | `debian:bookworm-slim`, ~135 MB (ML-enabled) or ~8 MB (heuristic-only) |
 | **Architectures** | amd64, arm64 |
 | **ML model** | CharCNN-BiLSTM v13, 1.6M params, <1ms CPU inference |
-| **Tests** | 420 tests, 10 benchmarks, 3 fuzz targets, 91.2% coverage (non-CGO) / 91.3% (CGO) |
+| **Tests** | 426 tests, 10 benchmarks, 3 fuzz targets, 91.3% coverage (non-CGO) / 91.3% (CGO) |
 
 ---
 
@@ -379,7 +379,7 @@ All CLI flags have environment variable equivalents:
 |------|------|-------------|
 | `tcp` | `--transport tcp` (default) | TCP listener, supports TLS/mTLS encryption for network deployments |
 | `stdio` | `--transport stdio` | Standard MCP stdin/stdout transport for local clients (Claude Desktop, Cursor) |
-| `http` | `--transport http` | Streamable HTTP (MCP 2025-06-18) — POST JSON-RPC to `/mcp` endpoint, with `Mcp-Session-Id` session management, DELETE for session termination, supports TLS-terminating reverse proxies |
+| `http` | `--transport http` | Streamable HTTP (MCP 2025-06-18) — POST JSON-RPC to `/mcp` endpoint, with `Mcp-Session-Id` session management, SSE streaming via Accept header, DELETE for session termination, supports TLS-terminating reverse proxies |
 
 ### Health Endpoints
 
@@ -522,8 +522,8 @@ with unsigned clients while enforcing signatures for clients that provide them.
 
 | Category | Tests | Coverage |
 |----------|-------|----------|
-| Unit + integration (non-CGO) | 420 | 91.2% |
-| Unit + integration (CGO + ML) | 424 | 91.2% |
+| Unit + integration (non-CGO) | 426 | 91.3% |
+| Unit + integration (CGO + ML) | 430 | 91.3% |
 | Load / break / soak (build tag: `load`) | 9 | — |
 | Benchmarks | 10 | — |
 | Fuzz targets | 3 | — |

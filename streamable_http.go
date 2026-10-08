@@ -4,13 +4,15 @@
 // The Streamable HTTP transport replaces the deprecated HTTP+SSE transport.
 // Clients POST JSON-RPC requests to a single endpoint. The server responds
 // with:
-//   - HTTP 200 + application/json (for request/response)
+//   - HTTP 200 + application/json (for simple request/response)
+//   - HTTP 200 + text/event-stream (when client requests SSE via Accept header)
 //   - HTTP 202 (for notifications, no response body)
 //   - HTTP 400 (for parse errors)
-//   - HTTP 405 (for non-POST methods)
+//   - HTTP 405 (for non-POST/DELETE methods)
 //
-// This implementation supports the request/response mode only. SSE streaming
-// (text/event-stream responses) is not yet implemented — see v1.3.0 roadmap.
+// SSE streaming: If the client includes "text/event-stream" in the Accept
+// header, the server responds with Content-Type: text/event-stream and
+// streams JSON-RPC responses as Server-Sent Events (data: {json}\n\n).
 //
 // Session management: The server generates an Mcp-Session-Id on initialize
 // and returns it in the response header. Subsequent requests should include
@@ -31,6 +33,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -244,11 +247,13 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 		t.touchSession(clientSessionID)
 	}
 
+	// Check if client requests SSE streaming
+	wantSSE := acceptsSSE(r)
+
 	// Process through the handler chain (same as TCP)
 	resp := t.handler(conn, &req)
 
-	// Send the response
-	w.Header().Set("Content-Type", "application/json")
+	// Set common headers
 	w.Header().Set("MCP-Protocol-Version", ProtocolVersion)
 
 	// Always set Mcp-Session-Id on initialize responses
@@ -256,6 +261,14 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 		w.Header().Set("Mcp-Session-Id", conn.Session.ID)
 	}
 
+	if wantSSE {
+		// SSE streaming mode: respond with text/event-stream
+		t.writeSSEResponse(w, resp)
+		return
+	}
+
+	// Plain JSON response mode
+	w.Header().Set("Content-Type", "application/json")
 	if resp == nil {
 		// Notification — no response expected
 		w.WriteHeader(http.StatusAccepted)
@@ -263,6 +276,53 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 	}
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp)
+}
+
+// acceptsSSE checks if the client's Accept header includes text/event-stream.
+func acceptsSSE(r *http.Request) bool {
+	accept := r.Header.Get("Accept")
+	if accept == "" {
+		return false
+	}
+	for _, part := range strings.Split(accept, ",") {
+		mediaType := strings.TrimSpace(strings.Split(part, ";")[0])
+		if mediaType == "text/event-stream" {
+			return true
+		}
+	}
+	return false
+}
+
+// writeSSEResponse writes a JSON-RPC response (or notification ack) as an
+// SSE event stream. For responses, it sends a single data event. For
+// notifications (nil response), it sends a comment ack and closes.
+func (t *streamableHTTPTransport) writeSSEResponse(w http.ResponseWriter, resp *JSONRPCResponse) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	flusher, canFlush := w.(http.Flusher)
+
+	if resp == nil {
+		// Notification — send comment ack, no data event
+		_, _ = w.Write([]byte(": ack\n\n"))
+		if canFlush {
+			flusher.Flush()
+		}
+		return
+	}
+
+	// Write the JSON-RPC response as an SSE data event
+	data, err := json.Marshal(resp)
+	if err != nil {
+		slog.Error("failed to marshal SSE response", "error", err)
+		return
+	}
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+	if canFlush {
+		flusher.Flush()
+	}
 }
 
 // startStreamableHTTPListener is a test helper that starts the listener

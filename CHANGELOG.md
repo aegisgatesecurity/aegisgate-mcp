@@ -5,6 +5,33 @@ All notable changes to AegisGate MCP are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] — 2026-10-08
+
+### Added
+
+- **SSE streaming responses for Streamable HTTP transport.** When a client
+  sends a POST request with `Accept: text/event-stream`, the server responds
+  with `Content-Type: text/event-stream` and streams JSON-RPC responses as
+  Server-Sent Events (`data: {json}\n\n`). Notifications receive a comment
+  ack (`: ack\n\n`). This enables compatibility with MCP clients that prefer
+  or require SSE streaming
+- SSE-specific headers: `Cache-Control: no-cache`, `Connection: keep-alive`
+- 7 new SSE tests: SSE initialize, SSE ping, SSE notification (comment ack),
+  SSE tools/list, SSE session required, Accept JSON still works (non-SSE
+  fallback), SSE response format verification
+
+### Changed
+
+- Streamable HTTP transport now checks `Accept` header for content negotiation
+  between `application/json` (default) and `text/event-stream` (SSE mode)
+- Updated transport documentation comments to reflect SSE support
+
+### Compatibility
+
+- Clients without `Accept: text/event-stream` continue to receive plain JSON
+  responses — fully backward compatible with v1.2.2
+- SSE mode is opt-in only; no changes required for existing clients
+
 ## [1.2.2] — 2026-10-08
 
 ### Changed
