@@ -321,10 +321,16 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Download all artifacts
+      - name: Download binary artifacts
         uses: actions/download-artifact@v7
         with:
           path: release/
+          pattern: mcp-server-*
+      - name: Download SBOM artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: release/
+          name: sbom-files
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
