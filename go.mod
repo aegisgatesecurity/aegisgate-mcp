@@ -1,6 +1,6 @@
 module github.com/aegisgatesecurity/aegisgate-mcp
 
-go 1.25
+go 1.26.6
 
 // Zero external module dependencies (no `require` directives).
 // All third-party code is vendored into internal/ — see NOTICE for details.
