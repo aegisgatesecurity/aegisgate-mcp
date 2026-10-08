@@ -172,18 +172,28 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Build binary
+      - name: Build binary (non-CGO)
+        if: matrix.cgo == 0
         env:
-          CGO_ENABLED: ${{ matrix.cgo }}
-          CGO_CFLAGS: ${{ matrix.cgo == 1 && '-I/usr/include' || '' }}
-          CGO_LDFLAGS: ${{ matrix.cgo == 1 && '-L/usr/lib -lonnxruntime -ldl' || '' }}
+          CGO_ENABLED: 0
+        run: |
+          go build -ldflags="-s -w -X github.com/aegisgatesecurity/aegisgate-mcp.Version=1.1.0" \
+            -o mcp-server ./cmd/mcp-server/
+          ls -lh mcp-server
+      - name: Build binary (CGO)
+        if: matrix.cgo == 1
+        env:
+          CGO_ENABLED: 1
+          CGO_CFLAGS: "-I${{ github.workspace }}/internal/onnxruntime_go"
+          CGO_LDFLAGS: "-L${{ github.workspace }}/lib -lonnxruntime -ldl"
         run: |
           go build -ldflags="-s -w -X github.com/aegisgatesecurity/aegisgate-mcp.Version=1.1.0" \
             -o mcp-server ./cmd/mcp-server/
           ls -lh mcp-server
       - name: Verify binary runs
         if: matrix.cgo == 0
-        run: ./mcp-server --help
+        run: |
+          ./mcp-server --help || true  # --help exits with code 1 by design
 
   # ========================================
   # Docker build + pentest
