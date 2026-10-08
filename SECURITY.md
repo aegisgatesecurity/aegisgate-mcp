@@ -84,11 +84,57 @@ providing 21 security layers:
 | Status | Item |
 |--------|------|
 | ✅ | **0 Known CVEs** in dependencies (zero external module deps) |
+| ✅ | **0 Go stdlib CVEs** (Go 1.26.6 toolchain — all stdlib vulns patched) |
 | ✅ | **SBOM Generation** (CycloneDX + SPDX) |
 | ✅ | **Secret Scanning** (Gitleaks + TruffleHog + OPSEC) |
 | ✅ | **92.3% Test Coverage** (non-CGO), 92.1% (CGO) |
 | ✅ | **Tamper-Evident Audit Logging** |
 | ✅ | **Air-gapped Capable** (zero network dependencies) |
+
+## Code-Scanning Alerts (Updated 2026-10-08)
+
+### Go Standard Library CVEs — ✅ Resolved
+
+All Go stdlib CVEs have been resolved by upgrading to Go 1.26.6 (matching
+Platform and Rampart). The `go.mod` declares `go 1.26.6` and CI uses
+`golang:1.26.6-bookworm` as the builder image. govulncheck runs on every
+push and reports zero vulnerabilities in our code.
+
+### Debian Bookworm-slim CVEs — Accepted (Upstream)
+
+The Docker runtime image is based on `debian:bookworm-slim`. Trivy reports
+~244 CVEs in the base OS packages (zlib, openssl, glibc, util-linux, wget,
+perl, ncurses, systemd, etc.). These are **accepted as upstream risk** for
+the following reasons:
+
+1. **Not our code** — These CVEs exist in Debian's pre-built packages,
+   not in AegisGate MCP source code.
+2. **Minimal attack surface** — The container runs as non-root, exposes
+   only ports 8081 (MCP) and 8082 (health), and makes no outbound network
+   connections. The MCP server is the only process running.
+3. **Standard practice** — All Debian-based containers (including Platform
+   and Rampart) carry the same CVE set. This is an inherent trade-off of
+   using a general-purpose Linux distro vs. a scratch/distroless image.
+4. **Mitigation path** — Periodic base image updates (`debian:bookworm-slim`
+   → latest patch level) reduce the CVE count over time. A future migration
+   to `gcr.io/distroless/static-debian12` would eliminate most OS CVEs.
+5. **Severity breakdown** — The majority are LOW/MEDIUM (note/warning).
+   HIGH (error) CVEs are in packages not exposed to the network (util-linux,
+   coreutils, tar, gzip) and require local attacker access.
+
+**These alerts are dismissed as "won't fix" with this documented justification.**
+
+### Gosec Findings — ✅ Resolved
+
+All gosec findings in our code have been resolved (PR #8):
+- G112 (Slowloris): Added `ReadHeaderTimeout` to health server
+- G118 (context.Background): Use request-scoped context in shutdown
+- G115 (uint16→uint8 overflow): Vendored textnorm code excluded (upstream Go x/text)
+
+### Gitleaks/Trivy Secret Alerts — ✅ Resolved
+
+Two false positive alerts on `.gitleaks.toml` (fake token in allowlist config)
+have been dismissed. `.gitleaks.toml` added to Trivy's `skip-files` list. |
 
 ## Reporting a Vulnerability
 
