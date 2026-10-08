@@ -146,15 +146,19 @@ jobs:
         with:
           format: cyclonedx-json
           output-file: sbom-cyclonedx.json
+          upload-artifact: false
+          upload-release-assets: false
       - name: Generate SPDX SBOM
         uses: anchore/sbom-action@v0.24.3
         with:
           format: spdx-json
           output-file: sbom-spdx.json
+          upload-artifact: false
+          upload-release-assets: false
       - name: Upload SBOMs
         uses: actions/upload-artifact@v6
         with:
-          name: sbom
+          name: sbom-files
           path: |
             sbom-cyclonedx.json
             sbom-spdx.json
@@ -330,4 +334,4 @@ jobs:
           files: |
             release/mcp-server-lite-*/*
             release/mcp-server-ml-*/*
-            release/sbom/*
+            release/sbom-files/*
