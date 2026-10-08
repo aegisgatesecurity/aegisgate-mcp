@@ -1,16 +1,29 @@
-# AegisGate MCP
+<div align="center">
 
-[🌐 Website](https://aegisgatesecurity.io) · [🔒 Security](SECURITY.md) · [💬 Discussions](https://github.com/aegisgatesecurity/aegisgate-mcp/discussions) · [📚 Docs](docs/)
+# 🛡️ AegisGate MCP
 
-![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)
-![License](https://img.shields.io/badge/License-Apache--2.0-blue)
-![Dependencies](https://img.shields.io/badge/Dependencies-Zero-success)
-![Coverage](https://img.shields.io/badge/Coverage-92.3%25-brightgreen)
-![Docker](https://img.shields.io/badge/Docker-DebianSlim-135MB-blue)
-![ML](https://img.shields.io/badge/ML-CharCNN--BiLSTM_v13-purple)
-![Arch](https://img.shields.io/badge/Arch-amd64%20%7C%20arm64-orange)
+**Secure MCP server framework — 21 layers of defense, zero dependencies.**
+
+*A hardened, zero-dependency MCP server written in pure Go. Build your MCP server on a foundation that has security built in from line one — not bolted on after a breach.*
+
+Apache 2.0 · 21 security layers · 30 regex patterns + CharCNN-BiLSTM (v13) ML detection · Zero CVEs · Zero external module dependencies
+
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Go](https://img.shields.io/badge/Go-1.26.6-00ADD8?logo=go)](https://golang.org/)
+[![Coverage](https://img.shields.io/badge/Coverage-90.9%25-brightgreen.svg)](#test-coverage)
+[![Dependencies](https://img.shields.io/badge/Dependencies-Zero-success.svg)](#overview)
+[![Docker](https://img.shields.io/badge/Docker-DebianSlim-135MB-blue.svg)](#docker)
+[![ML](https://img.shields.io/badge/ML-CharCNN--BiLSTM_v13-purple.svg)](#ml-threat-detection-l3)
+[![Arch](https://img.shields.io/badge/Arch-amd64%20%7C%20arm64-orange.svg)](#build)
+[![CI](https://github.com/aegisgatesecurity/aegisgate-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/aegisgatesecurity/aegisgate-mcp/actions/workflows/ci.yml)
+[![Security](https://github.com/aegisgatesecurity/aegisgate-mcp/actions/workflows/security.yml/badge.svg)](https://github.com/aegisgatesecurity/aegisgate-mcp/actions/workflows/security.yml)
+[![Patent Pending](https://img.shields.io/badge/IP-Patent_Pending-8B5CF6?logo=uspto)](#ip-notice)
+
+[Quick Start](#quick-start) · [Security Layers](#security-layers) · [RBAC](#rbac-roles) · [Architecture](#architecture) · [Protocol](#mcp-protocol-support) · [Docs](#documentation) · [Releases](https://github.com/aegisgatesecurity/aegisgate-mcp/releases)
 
 [![GitHub stars](https://img.shields.io/github/stars/aegisgatesecurity/aegisgate-mcp?style=social)](https://github.com/aegisgatesecurity/aegisgate-mcp) — **If AegisGate MCP helps you secure your AI agents, please consider ⭐ starring this repo. It helps others discover it.**
+
+</div>
 
 > **AegisGate Security™** is a trademark of AegisGate Security, LLC, filed with the USPTO.
 > "AegisGate MCP" is an unregistered product name. See [Trademark](#trademark) below.
@@ -73,7 +86,7 @@ dependencies so it can run air-gapped.
 | **Docker image** | `debian:bookworm-slim`, ~135 MB (ML-enabled) or ~8 MB (heuristic-only) |
 | **Architectures** | amd64, arm64 |
 | **ML model** | CharCNN-BiLSTM v13, 1.6M params, <1ms CPU inference |
-| **Tests** | 337+ tests, 10 benchmarks, 92.3% coverage (both CGO and non-CGO) |
+| **Tests** | 344 tests, 10 benchmarks, 3 fuzz targets, 90.9% coverage (non-CGO) / 91.6% (CGO) |
 
 ---
 
@@ -459,10 +472,11 @@ with unsigned clients while enforcing signatures for clients that provide them.
 
 | Category | Tests | Coverage |
 |----------|-------|----------|
-| Unit + integration (non-CGO) | 337 | 92.3% |
-| Unit + integration (CGO + ML) | 341 | 93.1% |
-| Load / break / soak (build tag: `load`) | 10 | — |
+| Unit + integration (non-CGO) | 344 | 90.9% |
+| Unit + integration (CGO + ML) | 348 | 91.6% |
+| Load / break / soak (build tag: `load`) | 7 | — |
 | Benchmarks | 10 | — |
+| Fuzz targets | 3 | — |
 
 ### Running Tests
 
@@ -699,6 +713,7 @@ Detailed documentation is available in the `docs/` directory:
 | [`docs/deployment-guide.md`](docs/deployment-guide.md) | Production deployment: Docker, TLS, air-gapped setups |
 | [`docs/admin-guide.md`](docs/admin-guide.md) | Administration: sessions, audit logs, RBAC management, policies |
 | [`docs/how-to-guides.md`](docs/how-to-guides.md) | Task-specific guides: custom tools, signature verification, mTLS setup |
+| [`docs/model-card.md`](docs/model-card.md) | ML model details: architecture, training data, performance metrics |
 
 ---
 
@@ -734,25 +749,23 @@ traffic across your organization — including MCP, HTTP, A2A, and ACP.
 
 ## License
 
-Licensed under the **Apache License, Version 2.0**.
+Apache-2.0. See [LICENSE](LICENSE) for the full text and [NOTICE](NOTICE) for attribution.
 
-```
-Copyright 2024-2026 AegisGate Security, LLC
+## Security
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+See [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
-    http://www.apache.org/licenses/LICENSE-2.0
+## Contributing
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md). All commits must be signed off (`git commit -s`) per the DCO.
 
-See the [LICENSE](LICENSE) file for the full license text and [NOTICE](NOTICE) for attribution.
+---
+
+<div align="center">
+
+## IP Notice
+
+AegisGate's core technologies are patent pending with the USPTO (Provisional App. Nos. 64/153,573–64/153,577, filed September 12, 2026). Source code is © 2025-2026 AegisGate Security, LLC. Licensed under Apache 2.0.
 
 ---
 
@@ -778,4 +791,10 @@ Contact: legal@aegisgatesecurity.io
 
 ---
 
-[🌐 AegisGate Security](https://aegisgatesecurity.io) · [💬 Discord](https://discord.gg/cvJ4QcY9B) · [✉️ support@aegisgatesecurity.io](mailto:support@aegisgatesecurity.io) · [🐦 X/Twitter](https://x.com/aegisgate) · [📱 Telegram](https://t.me/+imsWrOY4QpcxYzIx) · [🐘 Mastodon](https://mastodon.social/@aegisgate) · [💬 GitHub Discussions](https://github.com/aegisgatesecurity/aegisgate-mcp/discussions)
+<div align="center">
+
+[🌐 AegisGate Security](https://aegisgatesecurity.io) · [💬 Discord](https://discord.gg/cvJ4QcY9B) · [✉️ support@aegisgatesecurity.io](mailto:support@aegisgatesecurity.io) · [𝕏 @aegisgate](https://x.com/aegisgate) · [📱 Telegram](https://t.me/+imsWrOY4QpcxYzIx) · [🐘 @aegisgate@mastodon.social](https://mastodon.social/@aegisgate)
+
+Made with 🖤 by AegisGate Security developers to secure the AI attack surface.
+
+</div>
