@@ -6,6 +6,11 @@
 # Working directory (local only)
 .workingdirectory/
 
+# Session handoff / notes (local only)
+*HANDOFF*
+*NEXT-SESSION*
+*SESSION-NOTES*
+
 # Build artifacts
 bin/
 dist/
@@ -34,6 +39,7 @@ vendor/
 coverage.out
 coverage.html
 coverage-filtered.out
+coverage_*.out
 
 # Binary (built from cmd/mcp-server/)
 /mcp-server
@@ -42,11 +48,14 @@ coverage-filtered.out
 # Example binaries (built from examples/)
 /examples/simple-server/simple-server
 
-# Secrets
+# Secrets / credentials
 *.pem
 *.key
+*.p12
+*.pfx
 .env
 .env.*
+*.secret
 
 # Test artifacts
 /tmp/
@@ -55,3 +64,5 @@ coverage-filtered.out
 STRATEGY-MARKET-ANALYSIS.md
 TECHNICAL-GAPS-CORRECTED.md
 95-PERCENT-NEEDS.md
+GOTCHAS*
+TODO*
