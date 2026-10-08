@@ -32,7 +32,13 @@ jobs:
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+          govulncheck ./... 2>&1 | tee govulncheck-results.txt || true
+          if grep -q "Your code is affected by" govulncheck-results.txt; then
+            echo "⚠️ Vulnerabilities found — see results"
+            cat govulncheck-results.txt
+            exit 1
+          fi
+          echo "✅ No vulnerabilities affecting this code"
 
   # ========================================
   # Gosec — Go SAST
