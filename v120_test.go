@@ -437,6 +437,45 @@ func TestSecuredServerRegisterToolWithPoisoning(t *testing.T) {
 // Streamable HTTP Transport
 // ============================================================
 
+// httpInitAndGetSession sends an initialize request to the streamable HTTP
+// transport and returns the Mcp-Session-Id from the response header.
+// This is a test helper for tests that need an active session.
+func httpInitAndGetSession(t *testing.T, addr string) string {
+	t.Helper()
+	body := `{"jsonrpc":"2.0","method":"initialize","id":1}`
+	resp, err := http.Post("http://"+addr+"/mcp", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("initialize request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("initialize status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	sid := resp.Header.Get("Mcp-Session-Id")
+	if sid == "" {
+		t.Fatal("missing Mcp-Session-Id header in initialize response")
+	}
+	return sid
+}
+
+// httpPostWithSession sends a POST request with the given session ID header.
+func httpPostWithSession(t *testing.T, addr, sessionID, body string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest("POST", "http://"+addr+"/mcp", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if sessionID != "" {
+		req.Header.Set("Mcp-Session-Id", sessionID)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("HTTP request failed: %v", err)
+	}
+	return resp
+}
+
 func TestStreamableHTTPInitialize(t *testing.T) {
 	handler := NewRequestHandler(nil, nil, nil)
 	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
@@ -460,6 +499,10 @@ func TestStreamableHTTPInitialize(t *testing.T) {
 	}
 	if pv := resp.Header.Get("MCP-Protocol-Version"); pv != "2025-06-18" {
 		t.Errorf("MCP-Protocol-Version = %q, want %q", pv, "2025-06-18")
+	}
+	// v1.2.2: initialize must return Mcp-Session-Id header
+	if sid := resp.Header.Get("Mcp-Session-Id"); sid == "" {
+		t.Error("missing Mcp-Session-Id header in initialize response")
 	}
 	var rpcResp struct {
 		Result map[string]interface{} `json:"result"`
@@ -504,11 +547,11 @@ func TestStreamableHTTPPing(t *testing.T) {
 	}
 	defer ln.Close()
 
+	// v1.2.2: must initialize first to get a session ID
+	sid := httpInitAndGetSession(t, ln.Addr().String())
+
 	body := `{"jsonrpc":"2.0","method":"ping","id":2}`
-	resp, err := http.Post("http://"+ln.Addr().String()+"/mcp", "application/json", strings.NewReader(body))
-	if err != nil {
-		t.Fatalf("HTTP request failed: %v", err)
-	}
+	resp := httpPostWithSession(t, ln.Addr().String(), sid, body)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("StatusCode = %d, want %d", resp.StatusCode, http.StatusOK)
@@ -526,12 +569,12 @@ func TestStreamableHTTPNotification(t *testing.T) {
 	}
 	defer ln.Close()
 
+	// v1.2.2: must initialize first to get a session ID
+	sid := httpInitAndGetSession(t, ln.Addr().String())
+
 	// notifications/initialized has no ID → should return 202 Accepted
 	body := `{"jsonrpc":"2.0","method":"notifications/initialized"}`
-	resp, err := http.Post("http://"+ln.Addr().String()+"/mcp", "application/json", strings.NewReader(body))
-	if err != nil {
-		t.Fatalf("HTTP request failed: %v", err)
-	}
+	resp := httpPostWithSession(t, ln.Addr().String(), sid, body)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusAccepted {
 		t.Errorf("StatusCode = %d, want %d", resp.StatusCode, http.StatusAccepted)
@@ -573,11 +616,11 @@ func TestStreamableHTTPToolsList(t *testing.T) {
 	}
 	defer ln.Close()
 
+	// v1.2.2: must initialize first to get a session ID
+	sid := httpInitAndGetSession(t, ln.Addr().String())
+
 	body := `{"jsonrpc":"2.0","method":"tools/list","id":3}`
-	resp, err := http.Post("http://"+ln.Addr().String()+"/mcp", "application/json", strings.NewReader(body))
-	if err != nil {
-		t.Fatalf("HTTP request failed: %v", err)
-	}
+	resp := httpPostWithSession(t, ln.Addr().String(), sid, body)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("StatusCode = %d, want %d", resp.StatusCode, http.StatusOK)
@@ -598,8 +641,176 @@ func TestStreamableHTTPToolsList(t *testing.T) {
 }
 
 // ============================================================
-// SecuredMCPServer Resource/Prompt Registration
+// Streamable HTTP Session Management (v1.2.2)
 // ============================================================
+
+func TestStreamableHTTPSessionRequired(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
+		return handler.HandleRequest(conn, req)
+	})
+	ln, err := startStreamableHTTPListener(transport)
+	if err != nil {
+		t.Fatalf("startStreamableHTTPListener failed: %v", err)
+	}
+	defer ln.Close()
+
+	// Ping without a session ID → should get 404
+	body := `{"jsonrpc":"2.0","method":"ping","id":1}`
+	resp := httpPostWithSession(t, ln.Addr().String(), "", body)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("StatusCode = %d, want %d (session required)", resp.StatusCode, http.StatusNotFound)
+	}
+}
+
+func TestStreamableHTTPInvalidSession(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
+		return handler.HandleRequest(conn, req)
+	})
+	ln, err := startStreamableHTTPListener(transport)
+	if err != nil {
+		t.Fatalf("startStreamableHTTPListener failed: %v", err)
+	}
+	defer ln.Close()
+
+	// Ping with a bogus session ID → should get 404
+	body := `{"jsonrpc":"2.0","method":"ping","id":1}`
+	resp := httpPostWithSession(t, ln.Addr().String(), "bogus-session-id", body)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("StatusCode = %d, want %d (invalid session)", resp.StatusCode, http.StatusNotFound)
+	}
+}
+
+func TestStreamableHTTPDeleteSession(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
+		return handler.HandleRequest(conn, req)
+	})
+	ln, err := startStreamableHTTPListener(transport)
+	if err != nil {
+		t.Fatalf("startStreamableHTTPListener failed: %v", err)
+	}
+	defer ln.Close()
+
+	// Initialize to get a session
+	sid := httpInitAndGetSession(t, ln.Addr().String())
+
+	// Delete the session
+	req, err := http.NewRequest("DELETE", "http://"+ln.Addr().String()+"/mcp", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Mcp-Session-Id", sid)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE request failed: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("DELETE StatusCode = %d, want %d", resp.StatusCode, http.StatusNoContent)
+	}
+
+	// Now ping with the deleted session → should get 404
+	body := `{"jsonrpc":"2.0","method":"ping","id":2}`
+	resp2 := httpPostWithSession(t, ln.Addr().String(), sid, body)
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusNotFound {
+		t.Errorf("post-DELETE StatusCode = %d, want %d (session terminated)", resp2.StatusCode, http.StatusNotFound)
+	}
+}
+
+func TestStreamableHTTPDeleteWithoutSession(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
+		return handler.HandleRequest(conn, req)
+	})
+	ln, err := startStreamableHTTPListener(transport)
+	if err != nil {
+		t.Fatalf("startStreamableHTTPListener failed: %v", err)
+	}
+	defer ln.Close()
+
+	// DELETE without Mcp-Session-Id header → 400
+	req, err := http.NewRequest("DELETE", "http://"+ln.Addr().String()+"/mcp", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE request failed: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("DELETE without session StatusCode = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+}
+
+func TestStreamableHTTPSessionPersistsAcrossRequests(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
+		return handler.HandleRequest(conn, req)
+	})
+	ln, err := startStreamableHTTPListener(transport)
+	if err != nil {
+		t.Fatalf("startStreamableHTTPListener failed: %v", err)
+	}
+	defer ln.Close()
+
+	// Initialize → get session
+	sid := httpInitAndGetSession(t, ln.Addr().String())
+
+	// Ping → should work
+	body := `{"jsonrpc":"2.0","method":"ping","id":2}`
+	resp := httpPostWithSession(t, ln.Addr().String(), sid, body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("ping StatusCode = %d, want 200", resp.StatusCode)
+	}
+
+	// Second ping with same session → should still work
+	resp2 := httpPostWithSession(t, ln.Addr().String(), sid, body)
+	resp2.Body.Close()
+	if resp2.StatusCode != http.StatusOK {
+		t.Errorf("second ping StatusCode = %d, want 200", resp2.StatusCode)
+	}
+}
+
+func TestStreamableHTTPSubscribeNotFound(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
+		return handler.HandleRequest(conn, req)
+	})
+	ln, err := startStreamableHTTPListener(transport)
+	if err != nil {
+		t.Fatalf("startStreamableHTTPListener failed: %v", err)
+	}
+	defer ln.Close()
+
+	sid := httpInitAndGetSession(t, ln.Addr().String())
+
+	// resources/subscribe should now return method not found (not fake success)
+	body := `{"jsonrpc":"2.0","method":"resources/subscribe","id":5}`
+	resp := httpPostWithSession(t, ln.Addr().String(), sid, body)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("StatusCode = %d, want 200", resp.StatusCode)
+	}
+	var rpcResp struct {
+		Error *JSONRPCError `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+		t.Fatalf("failed to decode: %v", err)
+	}
+	if rpcResp.Error == nil {
+		t.Fatal("expected error for resources/subscribe, got nil")
+	}
+	if rpcResp.Error.Code != ErrorMethodNotFound {
+		t.Errorf("error code = %d, want %d", rpcResp.Error.Code, ErrorMethodNotFound)
+	}
+}
 
 func TestSecuredServerRegisterResource(t *testing.T) {
 	cfg := DefaultServerConfig()
@@ -649,8 +860,8 @@ func TestSecuredServerRegisterPrompt(t *testing.T) {
 // ============================================================
 
 func TestVersion120(t *testing.T) {
-	if Version != "1.2.1" {
-		t.Errorf("Version = %q, want %q", Version, "1.2.1")
+	if Version != "1.2.2" {
+		t.Errorf("Version = %q, want %q", Version, "1.2.2")
 	}
 }
 

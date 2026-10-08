@@ -3,14 +3,19 @@
 //
 // The Streamable HTTP transport replaces the deprecated HTTP+SSE transport.
 // Clients POST JSON-RPC requests to a single endpoint. The server responds
-// with either:
-//   - HTTP 200 + JSON body (for simple request/response)
-//   - HTTP 200 + text/event-stream (for streaming responses)
+// with:
+//   - HTTP 200 + application/json (for request/response)
+//   - HTTP 202 (for notifications, no response body)
+//   - HTTP 400 (for parse errors)
+//   - HTTP 405 (for non-POST methods)
 //
-// This implementation supports the simple request/response mode. Streaming
-// (SSE) is supported via the Accept header — if the client requests
-// text/event-stream, the server opens an SSE stream and sends responses
-// as Server-Sent Events.
+// This implementation supports the request/response mode only. SSE streaming
+// (text/event-stream responses) is not yet implemented — see v1.3.0 roadmap.
+//
+// Session management: The server generates an Mcp-Session-Id on initialize
+// and returns it in the response header. Subsequent requests should include
+// this header. If a client sends a session ID that does not match an active
+// session, the server responds with 404 Not Found.
 //
 // Security: all requests pass through the same middleware chain as TCP
 // (auth → signature verification → guardrails → response scan → handler).
@@ -19,16 +24,19 @@ package mcpsecurity
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 )
+
+// sessionLifetime is how long an idle HTTP session remains valid.
+const sessionLifetime = 30 * time.Minute
 
 // streamableHTTPTransport implements the MCP 2025-06-18 Streamable HTTP transport.
 type streamableHTTPTransport struct {
@@ -37,13 +45,26 @@ type streamableHTTPTransport struct {
 	lnAddr  string
 	httpSrv *http.Server
 	mu      sync.Mutex
+
+	// session management
+	sessions  map[string]*httpSession // session ID → session
+	sessionMu sync.RWMutex
+}
+
+// httpSession tracks an active Streamable HTTP session.
+type httpSession struct {
+	id        string
+	createdAt time.Time
+	lastSeen  time.Time
+	conn      *Connection
 }
 
 // newStreamableHTTPTransport creates a new Streamable HTTP transport.
 func newStreamableHTTPTransport(addr string, handler HandlerFunc) *streamableHTTPTransport {
 	t := &streamableHTTPTransport{
-		handler: handler,
-		addr:    addr,
+		handler:  handler,
+		addr:     addr,
+		sessions: make(map[string]*httpSession),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mcp", t.handleMCP)
@@ -57,6 +78,76 @@ func newStreamableHTTPTransport(addr string, handler HandlerFunc) *streamableHTT
 		IdleTimeout:       5 * time.Minute,
 	}
 	return t
+}
+
+// createSession creates a new HTTP session and stores it.
+func (t *streamableHTTPTransport) createSession() *httpSession {
+	id, err := generateSessionID()
+	if err != nil {
+		slog.Error("failed to generate session ID", "error", err)
+		// Fall back to a timestamp-based ID (should never happen in practice)
+		id = hex.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
+	}
+	now := time.Now()
+	conn := &Connection{
+		ID:        "http-" + id,
+		Conn:      nil,
+		CreatedAt: now,
+		LastSeen:  now,
+		Session:   &Session{ID: id},
+	}
+	conn.SetLastSeen(now)
+	sess := &httpSession{
+		id:        id,
+		createdAt: now,
+		lastSeen:  now,
+		conn:      conn,
+	}
+	t.sessionMu.Lock()
+	t.sessions[id] = sess
+	t.sessionMu.Unlock()
+	slog.Info("streamable HTTP session created", "session_id", id)
+	return sess
+}
+
+// getSession retrieves an active session by ID. Returns nil if not found
+// or expired.
+func (t *streamableHTTPTransport) getSession(id string) *httpSession {
+	if id == "" {
+		return nil
+	}
+	t.sessionMu.RLock()
+	sess, ok := t.sessions[id]
+	t.sessionMu.RUnlock()
+	if !ok {
+		return nil
+	}
+	// Check for expiry
+	if time.Since(sess.lastSeen) > sessionLifetime {
+		t.sessionMu.Lock()
+		delete(t.sessions, id)
+		t.sessionMu.Unlock()
+		slog.Info("streamable HTTP session expired", "session_id", id)
+		return nil
+	}
+	return sess
+}
+
+// touchSession updates the last-seen time for a session.
+func (t *streamableHTTPTransport) touchSession(id string) {
+	t.sessionMu.Lock()
+	if sess, ok := t.sessions[id]; ok {
+		sess.lastSeen = time.Now()
+		sess.conn.SetLastSeen(sess.lastSeen)
+	}
+	t.sessionMu.Unlock()
+}
+
+// deleteSession removes a session from the transport.
+func (t *streamableHTTPTransport) deleteSession(id string) {
+	t.sessionMu.Lock()
+	delete(t.sessions, id)
+	t.sessionMu.Unlock()
 }
 
 // start begins listening for Streamable HTTP requests.
@@ -86,9 +177,24 @@ func (t *streamableHTTPTransport) start(ctx context.Context) error {
 
 // handleMCP processes incoming MCP requests over HTTP.
 func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Request) {
+	// Per MCP 2025-06-18 Streamable HTTP spec:
+	// - POST: send a JSON-RPC request or notification
+	// - DELETE: terminate the session
+	if r.Method == http.MethodDelete {
+		sessionID := r.Header.Get("Mcp-Session-Id")
+		if sessionID == "" {
+			http.Error(w, "missing Mcp-Session-Id header", http.StatusBadRequest)
+			return
+		}
+		t.deleteSession(sessionID)
+		slog.Info("streamable HTTP session terminated by client", "session_id", sessionID)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	// Only accept POST (per MCP 2025-06-18 Streamable HTTP spec)
 	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
+		w.Header().Set("Allow", "POST, DELETE")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -105,6 +211,7 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 	var req JSONRPCRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("MCP-Protocol-Version", ProtocolVersion)
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(JSONRPCResponse{
 			JSONRPC: JSONRPCVersion,
@@ -113,20 +220,29 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Create a pseudo-connection for this HTTP request.
-	// Session ID is derived from the request ID for traceability.
-	sessionID := "http-anonymous"
-	if idStr := fmt.Sprintf("%v", req.ID); idStr != "" && idStr != "<nil>" && idStr != "null" {
-		sessionID = "http-" + idStr
+	// Session management:
+	// - initialize: create a new session, return Mcp-Session-Id header
+	// - other requests: validate session ID from header, 404 if invalid
+	clientSessionID := r.Header.Get("Mcp-Session-Id")
+	isInitialize := req.Method == "initialize"
+
+	var conn *Connection
+
+	if isInitialize {
+		// Create a new session for this client
+		sess := t.createSession()
+		conn = sess.conn
+	} else {
+		// Validate the session ID
+		sess := t.getSession(clientSessionID)
+		if sess == nil {
+			w.Header().Set("MCP-Protocol-Version", ProtocolVersion)
+			http.Error(w, "session not found or expired", http.StatusNotFound)
+			return
+		}
+		conn = sess.conn
+		t.touchSession(clientSessionID)
 	}
-	conn := &Connection{
-		ID:        fmt.Sprintf("http-%d", time.Now().UnixNano()),
-		Conn:      nil, // no underlying net.Conn for HTTP
-		CreatedAt: time.Now(),
-		LastSeen:  time.Now(),
-		Session:   &Session{ID: sessionID},
-	}
-	conn.SetLastSeen(time.Now())
 
 	// Process through the handler chain (same as TCP)
 	resp := t.handler(conn, &req)
@@ -134,6 +250,12 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 	// Send the response
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("MCP-Protocol-Version", ProtocolVersion)
+
+	// Always set Mcp-Session-Id on initialize responses
+	if isInitialize {
+		w.Header().Set("Mcp-Session-Id", conn.Session.ID)
+	}
+
 	if resp == nil {
 		// Notification — no response expected
 		w.WriteHeader(http.StatusAccepted)
@@ -158,6 +280,3 @@ func startStreamableHTTPListener(t *streamableHTTPTransport) (net.Listener, erro
 	}()
 	return ln, nil
 }
-
-// unused import guard (strings will be used when SSE streaming is added)
-var _ = strings.Contains

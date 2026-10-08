@@ -48,8 +48,15 @@ func TestResourcesSubscribe(t *testing.T) {
 	handler := NewRequestHandler(nil, nil, nil)
 	req := &JSONRPCRequest{JSONRPC: JSONRPCVersion, Method: "resources/subscribe", ID: 1}
 	resp := handler.HandleRequest(&Connection{ID: "c1", Session: &Session{ID: "c1"}}, req)
-	if resp == nil || resp.Error != nil {
-		t.Fatalf("resources/subscribe failed: %v", resp)
+	// v1.2.2: resources/subscribe is not implemented — should return method not found
+	if resp == nil {
+		t.Fatal("expected non-nil response")
+	}
+	if resp.Error == nil {
+		t.Fatal("expected error for unimplemented resources/subscribe, got nil")
+	}
+	if resp.Error.Code != ErrorMethodNotFound {
+		t.Errorf("error code = %d, want %d (method not found)", resp.Error.Code, ErrorMethodNotFound)
 	}
 }
 
@@ -57,8 +64,15 @@ func TestResourcesUnsubscribe(t *testing.T) {
 	handler := NewRequestHandler(nil, nil, nil)
 	req := &JSONRPCRequest{JSONRPC: JSONRPCVersion, Method: "resources/unsubscribe", ID: 1}
 	resp := handler.HandleRequest(&Connection{ID: "c1", Session: &Session{ID: "c1"}}, req)
-	if resp == nil || resp.Error != nil {
-		t.Fatalf("resources/unsubscribe failed: %v", resp)
+	// v1.2.2: resources/unsubscribe is not implemented — should return method not found
+	if resp == nil {
+		t.Fatal("expected non-nil response")
+	}
+	if resp.Error == nil {
+		t.Fatal("expected error for unimplemented resources/unsubscribe, got nil")
+	}
+	if resp.Error.Code != ErrorMethodNotFound {
+		t.Errorf("error code = %d, want %d (method not found)", resp.Error.Code, ErrorMethodNotFound)
 	}
 }
 
