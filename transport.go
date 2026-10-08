@@ -20,7 +20,7 @@ import (
 
 // ServeOptions configures how the server runs (transport mode, health endpoint).
 type ServeOptions struct {
-	Transport  string // "tcp" (default) or "stdio"
+	Transport  string // "tcp" (default), "stdio", or "http" (Streamable HTTP, MCP 2025-06-18)
 	HealthAddr string // if non-empty, starts a health HTTP listener on this address
 }
 

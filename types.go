@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Package mcpsecurity — MCP Protocol Types
-// Based on MCP Specification 2024-11-05
+// Based on MCP Specification 2025-06-18
 // Adapted from AegisGate Platform upstream/aegisguard/pkg/agent-protocol/mcp/types.go
 
 package mcpsecurity
@@ -8,10 +8,11 @@ package mcpsecurity
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
-const ProtocolVersion = "2024-11-05"
+const ProtocolVersion = "2025-06-18"
 const JSONRPCVersion = "2.0"
 
 const (
@@ -70,6 +71,87 @@ type ContentBlock struct {
 
 type ListToolsResult struct {
 	Tools []Tool `json:"tools"`
+}
+
+// --- Resource Structures (MCP Spec 2025-06-18) ---
+
+// Resource represents a server-side resource that clients can read.
+type Resource struct {
+	URI         string `json:"uri"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	MimeType    string `json:"mimeType,omitempty"`
+}
+
+// ResourceContent holds the content returned from a resource read.
+type ResourceContent struct {
+	URI      string `json:"uri"`
+	Text     string `json:"text,omitempty"`
+	Blob     string `json:"blob,omitempty"`
+	MimeType string `json:"mimeType,omitempty"`
+}
+
+// ListResourcesResult is the response for resources/list.
+type ListResourcesResult struct {
+	Resources []Resource `json:"resources"`
+}
+
+// ReadResourceResult is the response for resources/read.
+type ReadResourceResult struct {
+	Contents []ResourceContent `json:"contents"`
+}
+
+// ResourceHandlerFunc reads a resource by URI and returns its content.
+type ResourceHandlerFunc func(ctx context.Context, uri string) (*ResourceContent, error)
+
+// --- Prompt Structures (MCP Spec 2025-06-18) ---
+
+// Prompt represents a server-side prompt template.
+type Prompt struct {
+	Name        string           `json:"name"`
+	Description string           `json:"description,omitempty"`
+	Arguments   []PromptArgument `json:"arguments,omitempty"`
+}
+
+// PromptArgument defines a named argument for a prompt template.
+type PromptArgument struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required,omitempty"`
+}
+
+// PromptMessage is a single message in a prompt result.
+type PromptMessage struct {
+	Role    string      `json:"role"`
+	Content interface{} `json:"content"`
+}
+
+// GetPromptResult is the response for prompts/get.
+type GetPromptResult struct {
+	Description string          `json:"description,omitempty"`
+	Messages    []PromptMessage `json:"messages"`
+}
+
+// ListPromptsResult is the response for prompts/list.
+type ListPromptsResult struct {
+	Prompts []Prompt `json:"prompts"`
+}
+
+// PromptHandlerFunc generates a prompt from the given arguments.
+type PromptHandlerFunc func(ctx context.Context, args map[string]string) (*GetPromptResult, error)
+
+// --- Tool Poisoning Detection ---
+
+// ToolPoisoningError describes a tool poisoning detection result.
+type ToolPoisoningError struct {
+	ToolName string
+	Reason   string
+	Patterns []string
+}
+
+// Error implements the error interface.
+func (e *ToolPoisoningError) Error() string {
+	return fmt.Sprintf("tool poisoning detected for %q: %s (patterns: %v)", e.ToolName, e.Reason, e.Patterns)
 }
 
 // --- JSON-RPC Structures ---

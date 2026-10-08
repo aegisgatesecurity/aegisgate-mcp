@@ -57,7 +57,7 @@ func run(args []string) error {
 
 	// --- Network ---
 	addr := fs.String("addr", getenv("MCP_SERVER_ADDR", ":8081"), "Listen address (TCP mode)")
-	transport := fs.String("transport", getenv("MCP_TRANSPORT", "tcp"), "Transport mode: tcp or stdio")
+	transport := fs.String("transport", getenv("MCP_TRANSPORT", "tcp"), "Transport mode: tcp, stdio, or http (Streamable HTTP, MCP 2025-06-18)")
 	maxConn := fs.Int("max-connections", getenvInt("MCP_MAX_CONNECTIONS", 1000), "Max concurrent TCP connections (-1 = unlimited)")
 
 	// --- Auth ---
