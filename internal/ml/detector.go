@@ -47,6 +47,14 @@ import (
 // v9:   0076b66d069ca445589526624ebeb67b65a1df68d615525b83e528f03e0bd4b7
 const ExpectedModelHash = "329fd89afe153d0b9f01143c50a9a2dd73b1d3613cc87a07b4b83a93172aeaf0"
 
+// ExpectedONNXRuntimeHash is the SHA-256 hash of the vendored ONNX Runtime
+// shared library (libonnxruntime.so v1.29.0, Linux x86_64). If the .so file
+// hash does not match, the detector refuses to initialize the ONNX session —
+// preventing supply-chain tampering of the inference engine itself.
+//
+// When ARM64 support is added, this will become a map[GOARCH]string.
+const ExpectedONNXRuntimeHash = "5715f06d8992ca8eeeddcce43df3a7d38f97d537052126f558e912cb312460ca"
+
 // ThreatDetector performs neural network-based threat detection.
 // ONNX session fields are defined in build-tag-specific files:
 //   - detector_onnx.go  (CGO enabled: typed *onnxruntime fields)

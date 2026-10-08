@@ -101,6 +101,15 @@ func (td *ThreatDetector) loadModelONNX(path string) error {
 	// Auto-discover onnxruntime shared library if not explicitly configured
 	libPath := discoverONNXRuntimeLib(td.config.ONNXRuntimeLibPath)
 	if libPath != "" {
+		// Verify shared library hash before loading — supply chain protection
+		soHash, err := computeFileHash(libPath)
+		if err != nil {
+			return fmt.Errorf("compute onnxruntime hash: %w", err)
+		}
+		expectedSOHash := "sha256:" + ExpectedONNXRuntimeHash
+		if soHash != expectedSOHash {
+			return fmt.Errorf("onnxruntime shared library hash mismatch: got %s, expected %s — possible supply-chain tampering", soHash, expectedSOHash)
+		}
 		onnxruntime.SetSharedLibraryPath(libPath)
 	}
 
