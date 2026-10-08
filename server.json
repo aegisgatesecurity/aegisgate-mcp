@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.aegisgatesecurity/aegisgate-mcp",
+  "title": "AegisGate MCP",
+  "description": "Secure MCP server framework with 22 security layers — regex pattern matching, ATLAS compliance, CharCNN-BiLSTM neural ML threat detection, tool poisoning detection, RBAC, policy engine, audit logging, and response scanning. Zero external dependencies. Apache 2.0.",
+  "repository": {
+    "url": "https://github.com/aegisgatesecurity/aegisgate-mcp",
+    "source": "github"
+  },
+  "version": "1.2.2",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/aegisgatesecurity/aegisgate-mcp:1.2.2",
+      "transport": {
+        "type": "streamable-http",
+        "url": "http://0.0.0.0:8081/mcp"
+      }
+    }
+  ],
+  "remotes": []
+}

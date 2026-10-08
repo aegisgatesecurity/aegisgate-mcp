@@ -1,3 +1,4 @@
+<!-- mcp-name: io.github.aegisgatesecurity/aegisgate-mcp -->
 <div align="center">
 
 # 🛡️ AegisGate MCP

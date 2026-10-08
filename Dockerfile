@@ -122,6 +122,9 @@ WORKDIR /app
 # Expose MCP server port (TCP mode) and health endpoint
 EXPOSE 8081 8082
 
+# MCP Registry annotation (for ownership verification)
+LABEL io.modelcontextprotocol.server.name="io.github.aegisgatesecurity/aegisgate-mcp"
+
 # Run as non-root user
 USER mcpuser
 
