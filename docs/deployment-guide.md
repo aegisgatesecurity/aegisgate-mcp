@@ -1,10 +1,10 @@
-# AegisGate MCP™ Deployment Guide
+# AegisGate MCP Deployment Guide
 
-**Product:** AegisGate MCP™ — Security-First MCP Server for OT/ICS Environments  
+**Product:** AegisGate MCP — Security-First MCP Server  
 **Vendor:** AegisGate Security, LLC  
 **License:** Apache-2.0  
 **Version:** 1.1.0  
-**Runtime:** Go 1.22+  
+**Runtime:** Go 1.26+  
 **External Dependencies:** Zero  
 **Docker Base Image:** `debian:bookworm-slim` (~135 MB ML-enabled, ~8 MB heuristic-only)
 
@@ -27,17 +27,17 @@
 
 ## 1. Deployment Modes Overview
 
-AegisGate MCP™ supports three deployment modes, each tailored to a specific operational context.
+AegisGate MCP supports three deployment modes, each tailored to a specific operational context.
 
 | Mode | Transport | TLS/mTLS | Use Case |
 |------|-----------|----------|----------|
 | **TCP** (default) | JSON-RPC 2.0 over TCP | ✅ Full TLS + mTLS | Network-accessible server; production multi-client environments |
 | **stdio** | JSON-RPC 2.0 over stdin/stdout | ❌ Not applicable (local IPC) | Local MCP clients (Claude Desktop, Cursor, other MCP-compatible IDEs) |
-| **Go library** | In-process function calls | N/A | Embedding AegisGate MCP™ directly inside another Go application |
+| **Go library** | In-process function calls | N/A | Embedding AegisGate MCP directly inside another Go application |
 
 ### TCP Mode
 
-The default and recommended mode for production. Listens on a configurable address, supports bearer-token authentication, TLS encryption, and mutual TLS (mTLS) for client identity verification. Suitable for OT/ICS environments where network-level access control and audit logging are required.
+The default and recommended mode for production. Listens on a configurable address, supports bearer-token authentication, TLS encryption, and mutual TLS (mTLS) for client identity verification. Suitable for production environments where network-level access control and audit logging are required.
 
 ### stdio Mode
 
@@ -45,7 +45,7 @@ Designed for local integration with MCP-compatible desktop clients. The server r
 
 ### Go Library
 
-AegisGate MCP™ can be imported as a Go package and embedded directly in another application. This eliminates the network hop entirely and gives the host application full programmatic control over configuration, session management, and security policies. See the [Go API documentation](./api-reference.md) for details.
+AegisGate MCP can be imported as a Go package and embedded directly in another application. This eliminates the network hop entirely and gives the host application full programmatic control over configuration, session management, and security policies. See the [Go API documentation](./api-reference.md) for details.
 
 ---
 
@@ -92,7 +92,7 @@ sudo chown mcp:mcp /var/log/mcp
 Create `/etc/mcp/mcp.env`:
 
 ```ini
-# /etc/mcp/mcp.env — AegisGate MCP™ runtime environment
+# /etc/mcp/mcp.env — AegisGate MCP runtime environment
 TOKEN=production-bearer-token-change-me
 ```
 
@@ -156,7 +156,7 @@ curl http://127.0.0.1:8082/healthz
 
 ## 3. Docker Deployment
 
-AegisGate MCP™ uses `debian:bookworm-slim` as the base image with CGO enabled
+AegisGate MCP uses `debian:bookworm-slim` as the base image with CGO enabled
 for full neural threat detection. The final image is approximately 135 MB and
 includes the vendored ONNX Runtime and CharCNN-BiLSTM v13 model. A lighter
 heuristic-only image (~8 MB) can be built with `--build-arg CGO_ENABLED=0`.
@@ -205,7 +205,7 @@ docker run -d --name aegisgate-mcp \
 
 ### Run — With mTLS (Mutual TLS)
 
-Mutual TLS requires the server to verify client certificates against a trusted CA. This is the recommended configuration for OT/ICS environments.
+Mutual TLS requires the server to verify client certificates against a trusted CA. This is the recommended configuration for production environments.
 
 ```bash
 docker run -d --name aegisgate-mcp \
@@ -274,7 +274,7 @@ volumes:
 
 ### Healthchecks
 
-The AegisGate MCP™ Docker image is based on `debian:bookworm-slim` and includes
+The AegisGate MCP Docker image is based on `debian:bookworm-slim` and includes
 `wget` for health checks. Enable the health endpoint with `--health-addr` and
 configure the Docker healthcheck:
 
@@ -327,7 +327,7 @@ curl http://localhost:8082/healthz
 
 ## 5. TLS/mTLS Configuration
 
-TLS encryption is strongly recommended for all network-accessible deployments. mTLS adds client identity verification, which is critical in OT/ICS environments.
+TLS encryption is strongly recommended for all network-accessible deployments. mTLS adds client identity verification, which is important in security-sensitive environments.
 
 ### Generate Self-Signed Certificates (for Testing)
 
@@ -585,7 +585,7 @@ For Cursor and other MCP-compatible IDEs, refer to the client's documentation fo
 
 ## 8. Health Checks and Monitoring
 
-AegisGate MCP™ exposes three HTTP endpoints for health checking and monitoring when `--health-addr` is configured.
+AegisGate MCP exposes three HTTP endpoints for health checking and monitoring when `--health-addr` is configured.
 
 ### Endpoints
 
@@ -646,7 +646,7 @@ The following bash script checks the `/healthz` endpoint and sends an alert if t
 ```bash
 #!/usr/bin/env bash
 # /usr/local/bin/aegisgate-healthcheck.sh
-# AegisGate MCP™ health check and alerting script
+# AegisGate MCP health check and alerting script
 
 set -euo pipefail
 
@@ -661,21 +661,21 @@ check_health() {
     (( attempt++ ))
     response=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$HEALTH_URL" 2>/dev/null || echo "000")
     if [[ "$response" == "200" ]]; then
-      echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] OK — AegisGate MCP™ is healthy (attempt $attempt)"
+      echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] OK — AegisGate MCP is healthy (attempt $attempt)"
       exit 0
     fi
     echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] WARN — Health check failed (HTTP $response, attempt $attempt/$MAX_RETRIES)"
     sleep "$RETRY_DELAY"
   done
 
-  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] CRITICAL — AegisGate MCP™ health check failed after $MAX_RETRIES attempts"
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] CRITICAL — AegisGate MCP health check failed after $MAX_RETRIES attempts"
   echo "Alerting $ALERT_EMAIL..."
 
   # Send alert (adjust for your notification system)
-  # mail -s "CRITICAL: AegisGate MCP™ is down" "$ALERT_EMAIL" < /dev/null
+  # mail -s "CRITICAL: AegisGate MCP is down" "$ALERT_EMAIL" < /dev/null
   # Or use curl to push to a webhook:
   # curl -X POST -H 'Content-Type: application/json' \
-  #   -d '{"text":"CRITICAL: AegisGate MCP™ is down"}' \
+  #   -d '{"text":"CRITICAL: AegisGate MCP is down"}' \
   #   https://hooks.example.com/alerts
 
   exit 1
@@ -693,7 +693,7 @@ Set up a cron job to run it periodically:
 
 ### Performance Characteristics
 
-AegisGate MCP™ has been validated with comprehensive load testing:
+AegisGate MCP has been validated with comprehensive load testing:
 
 | Metric | Value |
 |--------|-------|
@@ -715,7 +715,7 @@ go test -tags=load -count=1 -timeout 120s -v ./...
 
 ## 9. Air-Gapped Deployment
 
-Air-gapped deployment is a common requirement in OT/ICS environments where the server operates on a network with no internet connectivity.
+Air-gapped deployment is a common requirement in environments where the server operates on a network with no internet connectivity.
 
 ### Step 1 — Build on a Connected Machine
 
@@ -818,7 +818,7 @@ Or set up as a systemd service (see [Section 2](#2-binary-deployment)).
 
 ## 10. Hardening Checklist
 
-Review and complete this checklist before deploying AegisGate MCP™ to production.
+Review and complete this checklist before deploying AegisGate MCP to production.
 
 ### Authentication
 
@@ -865,7 +865,7 @@ Review and complete this checklist before deploying AegisGate MCP™ to producti
 - [ ] Use a JSON config file for production (easier management, version control, and review)
 - [ ] Set up the systemd service with security hardening directives (see [Section 2](#2-binary-deployment))
 - [ ] Configure firewall rules to restrict access to port 8081 (MCP) and 8082 (health) to authorized clients only
-- [ ] Regularly update to the latest version of AegisGate MCP™
+- [ ] Regularly update to the latest version of AegisGate MCP
 
 ---
 
@@ -882,4 +882,4 @@ Review and complete this checklist before deploying AegisGate MCP™ to producti
 
 ---
 
-*AegisGate MCP™ is a trademark of AegisGate Security, LLC. Licensed under Apache-2.0.*
+*AegisGate MCP is a product of AegisGate Security, LLC. Licensed under Apache-2.0.*

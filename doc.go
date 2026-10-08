@@ -16,7 +16,7 @@
 //   - Tool execution timeout (prevents hanging tools)
 //   - STDIO command validation (shell injection prevention)
 // - Tamper-evident audit logging (SHA-256 hash chain, tamper detection)
-//   - TLS/mTLS transport (encrypted connections for OT/ICS networks)
+//   - TLS/mTLS transport (encrypted connections for secure networks)
 //   - stdio transport (standard MCP client transport)
 //   - Health endpoint (HTTP /healthz, /readyz, /stats, /metrics for Prometheus)
 //   - Parameter validation (required fields checked against inputSchema)
