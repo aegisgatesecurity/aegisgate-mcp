@@ -1,11 +1,11 @@
-# AegisGate MCP™ How-To Guides
+# AegisGate MCP How-To Guides
 
-**Product:** AegisGate MCP™ — A security-first MCP server for OT/ICS environments  
-**Trademark:** AegisGate MCP™ is a trademark of AegisGate Security, LLC  
+**Product:** AegisGate MCP — A security-first MCP server for AI agents  
+**Trademark:** AegisGate MCP is a product of AegisGate Security, LLC  
 **License:** Apache-2.0  
 **Version:** 1.1.0  
 **Go Module:** `github.com/aegisgatesecurity/aegisgate-mcp`  
-**Go Version:** 1.22+  
+**Go Version:** 1.26+  
 **Dependencies:** Zero external runtime dependencies  
 
 ---
@@ -27,7 +27,7 @@
 
 ## 1. How to Embed AegisGate MCP as a Library
 
-AegisGate MCP™ can be embedded directly into any Go application as a library. The entire lifecycle — configuration, tool registration, agent enrollment, policy enforcement, and graceful shutdown — is driven through a single `SecuredMCPServer` instance.
+AegisGate MCP can be embedded directly into any Go application as a library. The entire lifecycle — configuration, tool registration, agent enrollment, policy enforcement, and graceful shutdown — is driven through a single `SecuredMCPServer` instance.
 
 ### Overview
 
@@ -158,7 +158,7 @@ func main() {
 
 ## 2. How to Register Custom Tools
 
-Tool registration in AegisGate MCP™ is a two-step process. This separation allows the server to expose tool metadata (for `tools/list` responses) before or independently of the handler implementation.
+Tool registration in AegisGate MCP is a two-step process. This separation allows the server to expose tool metadata (for `tools/list` responses) before or independently of the handler implementation.
 
 ### Two-Step Process
 
@@ -243,7 +243,7 @@ This means handlers can safely assume that required parameters are present and c
 
 ## 3. How to Use stdio Transport with Claude Desktop
 
-AegisGate MCP™ supports stdio transport for integration with Claude Desktop and other MCP-compatible clients that launch the server as a subprocess.
+AegisGate MCP supports stdio transport for integration with Claude Desktop and other MCP-compatible clients that launch the server as a subprocess.
 
 ### Configuration File Location
 
@@ -285,7 +285,7 @@ After updating the configuration file, restart Claude Desktop for the changes to
 
 ## 4. How to Configure TLS/mTLS
 
-AegisGate MCP™ supports TLS for encrypted transport and mutual TLS (mTLS) for client certificate authentication — essential for OT/ICS network segments where plaintext traffic is prohibited.
+AegisGate MCP supports TLS for encrypted transport and mutual TLS (mTLS) for client certificate authentication — essential for secure network segments where plaintext traffic is prohibited.
 
 ### Generate a Certificate Authority
 
@@ -397,13 +397,13 @@ func main() {
 }
 ```
 
-> **OT/ICS Best Practice:** Always use TLS 1.3 in production environments. Store private keys (`*.key`) with restrictive permissions (`chmod 600`) and never commit them to version control.
+> **Security Best Practice:** Always use TLS 1.3 in production environments. Store private keys (`*.key`) with restrictive permissions (`chmod 600`) and never commit them to version control.
 
 ---
 
 ## 5. How to Sign Requests (Anti-Forgery)
 
-AegisGate MCP™ supports ECDSA P-256 request signing to prevent request forgery and replay attacks. When trusted keys are registered on the server, signed requests are verified against the trusted key store before the request is processed.
+AegisGate MCP supports ECDSA P-256 request signing to prevent request forgery and replay attacks. When trusted keys are registered on the server, signed requests are verified against the trusted key store before the request is processed.
 
 ### Generate a Key Pair
 
@@ -586,7 +586,7 @@ type TimeWindow struct {
 
 ## 7. How to Use the Demo Tools
 
-AegisGate MCP™ includes three built-in demo tools that are registered when the `--demo` flag is passed. These tools are useful for testing, integration validation, and onboarding.
+AegisGate MCP includes three built-in demo tools that are registered when the `--demo` flag is passed. These tools are useful for testing, integration validation, and onboarding.
 
 ### Start the Server with Demo Tools
 
@@ -648,7 +648,7 @@ AegisGate MCP™ includes three built-in demo tools that are registered when the
 {
     "jsonrpc": "2.0",
     "result": {
-        "go_version": "go1.22.0",
+        "go_version": "go1.26.0",
         "os": "linux",
         "arch": "amd64",
         "cpus": 8,
@@ -691,7 +691,7 @@ AegisGate MCP™ includes three built-in demo tools that are registered when the
 
 ## 8. How to Write a JSON Config File
 
-AegisGate MCP™ can be configured via a JSON file passed with the `--config` flag. This is the preferred approach for production deployments where command-line arguments become unwieldy.
+AegisGate MCP can be configured via a JSON file passed with the `--config` flag. This is the preferred approach for production deployments where command-line arguments become unwieldy.
 
 ### Usage
 
@@ -849,7 +849,7 @@ Any configuration field that accepts a time duration (e.g., timeouts, rate limit
 
 ## 9. How to Run the Pentest Suite
 
-AegisGate MCP™ ships with an automated penetration testing suite designed to validate the server's security posture. The suite is containerized using Docker Compose and produces reports in the `pentest/reports/` directory.
+AegisGate MCP ships with an automated penetration testing suite designed to validate the server's security posture. The suite is containerized using Docker Compose and produces reports in the `pentest/reports/` directory.
 
 ### Prerequisites
 
@@ -863,7 +863,7 @@ AegisGate MCP™ ships with an automated penetration testing suite designed to v
 docker compose up -d
 ```
 
-This launches the AegisGate MCP™ server in a container, listening on the configured port.
+This launches the AegisGate MCP server in a container, listening on the configured port.
 
 ### Step 2 — Run the Pentest Suite
 
@@ -909,7 +909,7 @@ Each report file contains:
 
 ## 10. How to Run Tests
 
-AegisGate MCP™ maintains a comprehensive test suite (335 non-CGO / 333 CGO tests).
+AegisGate MCP maintains a comprehensive test suite (335 non-CGO / 333 CGO tests).
 Tests can be run in two modes depending on build configuration.
 
 ### Run All Tests
@@ -1061,4 +1061,4 @@ Benchmarks are used for regression tracking. Run with `go test -bench=. -benchme
 
 ---
 
-*Copyright © 2026 AegisGate Security, LLC. AegisGate MCP™ is a trademark of AegisGate Security, LLC. Licensed under the Apache License, Version 2.0.*
+*Copyright © 2026 AegisGate Security, LLC. AegisGate MCP is a product of AegisGate Security, LLC. Licensed under the Apache License, Version 2.0.*

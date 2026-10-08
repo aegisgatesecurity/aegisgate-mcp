@@ -1,10 +1,10 @@
-# Getting Started with AegisGate MCP™
+# Getting Started with AegisGate MCP
 
-> **AegisGate MCP™** is a trademark of AegisGate Security, LLC.
+> **AegisGate MCP** is a product of AegisGate Security, LLC.
 >
-> **License:** Apache-2.0 &nbsp;|&nbsp; **Version:** 1.1.0 &nbsp;|&nbsp; **Go:** 1.22+ &nbsp;|&nbsp; **Dependencies:** Zero external runtime dependencies
+> **License:** Apache-2.0 &nbsp;|&nbsp; **Version:** 1.1.0 &nbsp;|&nbsp; **Go:** 1.26+ &nbsp;|&nbsp; **Dependencies:** Zero external runtime dependencies
 
-AegisGate MCP™ is a security-first Model Context Protocol (MCP) server designed for operational technology (OT) and industrial control system (ICS) environments. It provides tool execution, role-based access control (RBAC), policy enforcement, audit logging, and neural threat detection out of the box — all in a single Go binary with zero external module dependencies.
+AegisGate MCP is a security-first Model Context Protocol (MCP) server designed for secure AI agent tool use across any environment. It provides tool execution, role-based access control (RBAC), policy enforcement, audit logging, and neural threat detection out of the box — all in a single Go binary with zero external module dependencies.
 
 This guide walks you through installing, running, and testing the server from scratch.
 
@@ -14,14 +14,14 @@ This guide walks you through installing, running, and testing the server from sc
 
 | Requirement | Minimum Version | Notes |
 |---|---|---|
-| **Go** | 1.22 | Required for building from source or using as a module dependency |
+| **Go** | 1.26 | Required for building from source or using as a module dependency |
 | **Git** | any recent version | Required for cloning the repository |
 | **Docker** *(optional)* | any recent version | Only needed for containerized deployment |
 
 Verify your environment:
 
 ```bash
-go version    # should print go1.22 or later
+go version    # should print go1.26 or later
 git --version
 docker --version   # optional
 ```
@@ -61,7 +61,7 @@ docker build --build-arg CGO_ENABLED=0 -t aegisgate-mcp:lite .
 
 ### As a Go Module Dependency
 
-To embed AegisGate MCP™ directly in your own Go application:
+To embed AegisGate MCP directly in your own Go application:
 
 ```bash
 go get github.com/aegisgatesecurity/aegisgate-mcp
@@ -101,7 +101,7 @@ This starts the server listening on **`127.0.0.1:8081`** in TCP mode with three 
 You should see a startup log similar to:
 
 ```
-AegisGate MCP™ server starting...
+AegisGate MCP server starting...
   Transport: tcp
   Address:   :8081
   Mode:      demo
@@ -271,7 +271,7 @@ echo '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"echo","arguments"
 }
 ```
 
-The server rejects the call and tells you exactly which parameter is missing. This is the built-in schema validation that AegisGate MCP™ applies to every tool before execution.
+The server rejects the call and tells you exactly which parameter is missing. This is the built-in schema validation that AegisGate MCP applies to every tool before execution.
 
 ---
 
@@ -455,7 +455,7 @@ Now that you have the server running and responding, explore the full feature se
 |---|---|
 | **Deployment Guide** | Docker configuration, TLS termination, reverse proxy setup, and production hardening |
 | **Admin Guide** | RBAC roles and permissions, the policy engine, audit logging, and multi-tenant configuration |
-| **How-To Guides** | Embedding AegisGate MCP™ as a library, writing custom tools, and integrating with OT/ICS environments |
+| **How-To Guides** | Embedding AegisGate MCP as a library, writing custom tools, and integrating with security-sensitive environments |
 
 ---
 

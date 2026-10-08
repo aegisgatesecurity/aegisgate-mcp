@@ -1,11 +1,11 @@
-# AegisGate MCP™ Administrator Guide
+# AegisGate MCP Administrator Guide
 
-**Product:** AegisGate MCP™  
-**Trademarks:** AegisGate MCP™ is a trademark of AegisGate Security, LLC  
+**Product:** AegisGate MCP  
+**Trademarks:** AegisGate MCP is a product of AegisGate Security, LLC  
 **License:** Apache-2.0  
 **Version:** 1.1.0  
-**Runtime:** Go 1.22+ (zero external dependencies)  
-**Audience:** System administrators managing AegisGate MCP™ in production  
+**Runtime:** Go 1.26+ (zero external dependencies)  
+**Audience:** System administrators managing AegisGate MCP in production  
 
 ---
 
@@ -26,7 +26,7 @@
 
 ## 1. Overview
 
-AegisGate MCP™ is a security-first Model Context Protocol (MCP) server designed for operational technology (OT) and industrial control system (ICS) environments. As an administrator, you are responsible for the configuration, maintenance, and monitoring of the following subsystems:
+AegisGate MCP is a security-first Model Context Protocol (MCP) server designed for secure AI agent tool use across any environment. As an administrator, you are responsible for the configuration, maintenance, and monitoring of the following subsystems:
 
 | Subsystem | Responsibility |
 |-----------|---------------|
@@ -44,7 +44,7 @@ Each subsystem is independently configurable through CLI flags, environment vari
 
 ## 2. Authentication Configuration
 
-AegisGate MCP™ supports two authentication mechanisms: **Bearer Token** and **API Key**. Both are presented by clients during the MCP `initialize` handshake. Authentication is mandatory—unauthenticated connections are refused.
+AegisGate MCP supports two authentication mechanisms: **Bearer Token** and **API Key**. Both are presented by clients during the MCP `initialize` handshake. Authentication is mandatory—unauthenticated connections are refused.
 
 ### 2.1 Bearer Token Auth
 
@@ -103,7 +103,7 @@ config := mcp.ServerConfigV2{
 
 ### 2.3 Auth Lockout
 
-To prevent brute-force attacks, AegisGate MCP™ enforces a per-connection lockout after repeated authentication failures.
+To prevent brute-force attacks, AegisGate MCP enforces a per-connection lockout after repeated authentication failures.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -204,7 +204,7 @@ A rule matches only if **all** specified conditions in the rule are satisfied. C
 
 ### 4.2 Built-in Rules
 
-Built-in rules are loaded automatically when you call `LoadDefaultPolicies()`. They provide baseline protection for common OT/ICS threats.
+Built-in rules are loaded automatically when you call `LoadDefaultPolicies()`. They provide baseline protection for common security threats.
 
 | Rule | Priority | Action | Condition |
 |------|----------|--------|-----------|
@@ -292,7 +292,7 @@ Response scanning (PII, secrets, XSS, prompt injection)
 
 ## 5. Audit Logging
 
-The audit log is the primary record of all activity on the AegisGate MCP™ server. It captures every session lifecycle event and tool call outcome in a tamper-evident, append-only format.
+The audit log is the primary record of all activity on the AegisGate MCP server. It captures every session lifecycle event and tool call outcome in a tamper-evident, append-only format.
 
 ### 5.1 Configuration
 
@@ -364,7 +364,7 @@ entries := srv.auditLogger.Query(&mcp.AuditFilter{
 | `AgentID` | `string` | Filter by agent ID |
 | `ToolName` | `string` | Filter by tool name |
 
-> **Compliance tip:** In OT/ICS environments subject to NERC CIP or IEC 62443, retain audit logs for a minimum of 90 days (or per your regulatory requirement). Use a log rotation tool (e.g., `logrotate`) to manage file growth, and forward logs to a centralized SIEM for correlation.
+> **Compliance tip:** In regulated environments subject to NERC CIP or IEC 62443, retain audit logs for a minimum of 90 days (or per your regulatory requirement). Use a log rotation tool (e.g., `logrotate`) to manage file growth, and forward logs to a centralized SIEM for correlation.
 
 ---
 
@@ -463,7 +463,7 @@ If a tool call exceeds the timeout, it is terminated and a `tool_timeout` audit 
 
 ## 7. Response Scanning and Redaction
 
-AegisGate MCP™ scans tool responses before delivering them to the client. This prevents sensitive data leakage, injection attacks, and prompt manipulation—all critical in OT/ICS environments where tool output may contain configuration secrets, network diagrams, or operational data.
+AegisGate MCP scans tool responses before delivering them to the client. This prevents sensitive data leakage, injection attacks, and prompt manipulation—all important in security-sensitive environments where tool output may contain configuration secrets, network diagrams, or operational data.
 
 ### 7.1 Response Scanning
 
@@ -478,7 +478,7 @@ Response scanning is **enabled by default**. The scanner checks for four categor
 
 ### 7.2 Block vs Redact
 
-AegisGate MCP™ offers two independent response modes:
+AegisGate MCP offers two independent response modes:
 
 | Mode | Behavior | Use Case |
 |------|----------|----------|
@@ -513,7 +513,7 @@ Both modes can be enabled simultaneously. When both are active, block rules are 
   --redact-secrets
 ```
 
-> **OT/ICS recommendation:** In production OT environments, enable all block modes (`--block-pii --block-secrets --block-xss --block-prompt-inject`) and leave redaction disabled. This provides the strictest data protection. Enable redaction only in development or staging environments where debugging requires partial output.
+> **Security recommendation:** In production OT environments, enable all block modes (`--block-pii --block-secrets --block-xss --block-prompt-inject`) and leave redaction disabled. This provides the strictest data protection. Enable redaction only in development or staging environments where debugging requires partial output.
 
 ---
 
@@ -587,7 +587,7 @@ falls back to heuristic-only detection.
 
 ## 8. Health Monitoring
 
-AegisGate MCP™ exposes an HTTP health and stats endpoint for integration with load balancers, Kubernetes probes, and monitoring systems.
+AegisGate MCP exposes an HTTP health and stats endpoint for integration with load balancers, Kubernetes probes, and monitoring systems.
 
 ### 8.1 Enabling the Health Endpoint
 
@@ -680,7 +680,7 @@ readinessProbe:
 
 ### 8.5 Prometheus Metrics
 
-When the health endpoint is enabled with `--health-addr`, AegisGate MCP™ exposes Prometheus-format metrics at `/metrics`:
+When the health endpoint is enabled with `--health-addr`, AegisGate MCP exposes Prometheus-format metrics at `/metrics`:
 
 ```
 # Available metrics:
@@ -759,7 +759,7 @@ Client                                    Server
   │     (proceed or reject)                  │
 ```
 
-> **OT/ICS recommendation:** Enable signature verification for all agents with `privileged` or `admin` roles. These roles have the broadest tool access, making them the highest-value targets for token theft or request forgery.
+> **Security recommendation:** Enable signature verification for all agents with `privileged` or `admin` roles. These roles have the broadest tool access, making them the highest-value targets for token theft or request forgery.
 
 ---
 
@@ -780,7 +780,7 @@ Client                                    Server
 
 ### 10.2 Log Levels
 
-AegisGate MCP™ uses Go's `slog` (structured logging) for operational logs. Control verbosity with environment variables:
+AegisGate MCP uses Go's `slog` (structured logging) for operational logs. Control verbosity with environment variables:
 
 ```bash
 # Verbose (debug-level logs including policy evaluation, auth attempts, scan results)
@@ -846,7 +846,7 @@ When investigating an issue, work through this checklist in order:
 | Audit log | First source of truth for all operational and security events |
 | Stats endpoint (`/stats`) | Real-time server state for quick diagnostics |
 | Structured logs (`slog`) | Detailed runtime information at adjustable verbosity |
-| GitHub issues | Report bugs and request features at the AegisGate MCP™ repository |
+| GitHub issues | Report bugs and request features at the AegisGate MCP repository |
 | Apache-2.0 license | No warranty is provided; review the `LICENSE` file for terms |
 
 ---
@@ -882,7 +882,7 @@ When investigating an issue, work through this checklist in order:
 
 ```bash
 #!/bin/bash
-# AegisGate MCP™ production startup script
+# AegisGate MCP production startup script
 
 ./mcp-server \
   --token "$(cat /etc/mcp/secrets/auth-token)" \
@@ -912,12 +912,12 @@ When investigating an issue, work through this checklist in order:
 - [ ] Enable signature verification for `privileged` and `admin` agents
 - [ ] Configure Kubernetes liveness and readiness probes against `/healthz` and `/readyz`
 - [ ] Set up a Prometheus scrape for `/stats`
-- [ ] Restrict network access to the MCP server using firewall rules (OT/ICS best practice)
+- [ ] Restrict network access to the MCP server using firewall rules (security best practice)
 - [ ] Run the server as a non-root user with minimal filesystem permissions
 - [ ] Review denied tool calls in the audit log daily
 
 ---
 
-*This document is the definitive reference for administering AegisGate MCP™ v1.1.0. For API and development documentation, refer to the Go package documentation and the project repository.*
+*This document is the definitive reference for administering AegisGate MCP v1.1.0. For API and development documentation, refer to the Go package documentation and the project repository.*
 
-*AegisGate MCP™ is a trademark of AegisGate Security, LLC. Licensed under Apache-2.0.*
+*AegisGate MCP is a product of AegisGate Security, LLC. Licensed under Apache-2.0.*

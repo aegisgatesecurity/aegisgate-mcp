@@ -486,7 +486,7 @@ func (s *SecuredMCPServer) AddPolicy(policy Policy) {
 	s.policyEngine.AddPolicy(policy)
 }
 
-// LoadDefaultPolicies loads the built-in OT/ICS security rules.
+// LoadDefaultPolicies loads the built-in security rules.
 func (s *SecuredMCPServer) LoadDefaultPolicies() {
 	for _, rule := range DefaultPolicyRules() {
 		s.policyEngine.AddRule(rule)

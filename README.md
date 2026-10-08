@@ -668,6 +668,36 @@ Detailed documentation is available in the `docs/` directory:
 
 ---
 
+## When to Upgrade to AegisGate Platform
+
+AegisGate MCP is a standalone secure MCP server framework — perfect for building
+and running MCP servers with security built in. It's free, open source, and has
+zero external dependencies.
+
+When your needs grow beyond a single server, **[AegisGate Platform](https://github.com/aegisgatesecurity/aegisgate-platform)**
+is the natural upgrade path:
+
+| Need | AegisGate MCP (free) | AegisGate Platform |
+|---|---|---|
+| Secure MCP server framework | ✅ 21 layers, zero deps | ✅ Embedded MCP server |
+| ML threat detection | ✅ Capped at 100 inf/min (single-server) | ✅ Unlimited, org-wide |
+| Proxy/gateway mode | ❌ Framework, not proxy | ✅ Sits between clients and all AI services |
+| OAuth 2.0 / OIDC / SSO | ❌ Bearer tokens + API keys | ✅ SAML, OIDC, JWT |
+| SIEM integration | ❌ File-based audit + Prometheus | ✅ Splunk, Elasticsearch, QRadar, Datadog (11 platforms) |
+| Compliance frameworks | ❌ None | ✅ 31 frameworks (HIPAA, PCI, SOC 2, EU AI Act, NIST, etc.) |
+| Multi-protocol (HTTP, A2A, ACP) | ❌ MCP only | ✅ 6 pillars |
+| Enterprise scale | ⚠️ 250 connections, 25 sessions | ✅ Unlimited |
+
+**Think of it this way:** AegisGate MCP is the secure foundation you build MCP
+servers on. AegisGate Platform is the enterprise gateway that secures all AI
+traffic across your organization — including MCP, HTTP, A2A, and ACP.
+
+> **Other AegisGate products:**
+> - **[AegisGate Rampart](https://github.com/aegisgatesecurity/aegisgate-rampart)** — Free local proxy for developers using Claude, Cursor, or Copilot
+> - **[AegisGate Lens](https://github.com/aegisgatesecurity/aegisgate-lens)** — Free browser extension for everyday AI conversations
+
+---
+
 ## License
 
 Licensed under the **Apache License, Version 2.0**.

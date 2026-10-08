@@ -55,7 +55,7 @@ type ServerConfigV2 struct {
 	// STDIO validation
 	EnableStdioValidation bool
 
-	// TLS/mTLS transport (for OT/ICS encrypted connections)
+	// TLS/mTLS transport (for encrypted connections)
 	TLSEnabled      bool
 	TLSCertFile     string // server certificate (PEM)
 	TLSKeyFile      string // server private key (PEM)
@@ -100,7 +100,7 @@ type ServerConfigV2 struct {
 	TestAgent bool
 }
 
-// DefaultServerConfig returns sensible defaults for an OT/ICS MCP server.
+// DefaultServerConfig returns sensible defaults for a production MCP server.
 func DefaultServerConfig() *ServerConfigV2 {
 	return &ServerConfigV2{
 		Address:               ":8081",

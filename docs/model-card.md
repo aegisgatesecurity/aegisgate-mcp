@@ -23,7 +23,7 @@
 
 - **Primary use**: Detect adversarial AI threats in MCP tool call parameters
   (input scanning) and tool responses (output scanning)
-- **Deployment context**: OT/ICS environments where AI agents interact with
+- **Deployment context**: environments where AI agents interact with
   critical infrastructure via MCP protocol
 - **Out-of-scope**: Not a general-purpose text classifier. Not a replacement
   for regex pattern matching — it supplements L1/L2 detection as L3.
