@@ -10,8 +10,8 @@ Apache 2.0 · 22 security layers · 30 regex patterns + CharCNN-BiLSTM (v13) ML 
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Go](https://img.shields.io/badge/Go-1.26.6-00ADD8?logo=go)](https://golang.org/)
-[![Version](https://img.shields.io/badge/Version-1.2.0-blue.svg)](#changelog)
-[![Coverage](https://img.shields.io/badge/Coverage-90.5%25-brightgreen.svg)](#test-coverage)
+[![Version](https://img.shields.io/badge/Version-1.2.1-blue.svg)](#changelog)
+[![Coverage](https://img.shields.io/badge/Coverage-90.6%25-brightgreen.svg)](#test-coverage)
 [![Dependencies](https://img.shields.io/badge/Dependencies-Zero-success.svg)](#overview)
 [![Docker](https://img.shields.io/badge/Docker-DebianSlim-135MB-blue.svg)](#docker)
 [![ML](https://img.shields.io/badge/ML-CharCNN--BiLSTM_v13-purple.svg)](#ml-threat-detection-l3)
@@ -80,14 +80,14 @@ dependencies so it can run air-gapped.
 
 | | |
 |---|---|
-| **Version** | 1.2.0 |
+| **Version** | 1.2.1 |
 | **License** | Apache-2.0 |
 | **Go version** | 1.26+ |
 | **Module deps** | Zero (no `require` directives — all third-party code vendored) |
 | **Docker image** | `debian:bookworm-slim`, ~135 MB (ML-enabled) or ~8 MB (heuristic-only) |
 | **Architectures** | amd64, arm64 |
 | **ML model** | CharCNN-BiLSTM v13, 1.6M params, <1ms CPU inference |
-| **Tests** | 388 tests, 10 benchmarks, 3 fuzz targets, 90.5% coverage (non-CGO) / 91.2% (CGO) |
+| **Tests** | 396 tests, 10 benchmarks, 3 fuzz targets, 90.6% coverage (non-CGO) / 91.3% (CGO) |
 
 ---
 
@@ -521,8 +521,8 @@ with unsigned clients while enforcing signatures for clients that provide them.
 
 | Category | Tests | Coverage |
 |----------|-------|----------|
-| Unit + integration (non-CGO) | 388 | 90.5% |
-| Unit + integration (CGO + ML) | 392 | 91.2% |
+| Unit + integration (non-CGO) | 396 | 90.6% |
+| Unit + integration (CGO + ML) | 400 | 91.3% |
 | Load / break / soak (build tag: `load`) | 9 | — |
 | Benchmarks | 10 | — |
 | Fuzz targets | 3 | — |
@@ -666,11 +666,12 @@ AegisGate MCP implements the following JSON-RPC methods (MCP Protocol 2025-06-18
 |--------|------|-------------|
 | `initialize` | Request | Parses `clientInfo`, returns `serverInfo` + capabilities (tools, resources, prompts, logging) |
 | `notifications/initialized` | Notification | Handled silently — no response sent (per MCP spec) |
-| `tools/list` | Request | Returns all registered tools with descriptions and `inputSchema` |
+| `notifications/cancelled` | Notification | Client-initiated cancellation — logged, no response sent |
+| `tools/list` | Request | Returns registered tools with descriptions and `inputSchema`. Supports cursor-based pagination |
 | `tools/call` | Request | Executes a tool after passing all security layers |
-| `resources/list` | Request | Returns all registered resources (URIs, names, descriptions) |
+| `resources/list` | Request | Returns registered resources (URIs, names, descriptions). Supports cursor-based pagination |
 | `resources/read` | Request | Reads a resource by URI — calls the registered `ResourceHandlerFunc` |
-| `prompts/list` | Request | Returns all registered prompts (names, descriptions, arguments) |
+| `prompts/list` | Request | Returns registered prompts (names, descriptions, arguments). Supports cursor-based pagination |
 | `prompts/get` | Request | Gets a prompt by name with optional arguments — calls the registered `PromptHandlerFunc` |
 | `ping` | Request | Health check — returns empty success response |
 
