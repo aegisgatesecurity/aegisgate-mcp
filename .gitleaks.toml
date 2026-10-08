@@ -1,0 +1,24 @@
+# gitleaks configuration for AegisGate MCP
+#
+# This file is a deliberate, line-precise allowlist for KNOWN FALSE POSITIVES
+# that gitleaks would otherwise flag. Each allowlist entry documents:
+#   1. The rule being suppressed
+#   2. The exact file and line
+#   3. The reason
+#
+# IMPORTANT: Do NOT add broad allowlists without founder review.
+
+[allowlist]
+  description = "AegisGate MCP — known false positives"
+  regexes = [
+    # === Canonical fake GitHub token in enhancements_test.go ===
+    # Reason: ghp_1234567890abcdefghijklmnopqrstuvwxyz is a canonical
+    # test fixture used to test the secret scanner. It is not a real
+    # GitHub token — the character pattern is deliberately sequential.
+    '''ghp_1234567890abcdefghijklmnopqrstuvwxyz''',
+  ]
+  paths = [
+    # Test files contain canonical fake tokens for scanner testing
+    '''(^|/)enhancements_test\.go$''',
+  ]
+  stopwords = []

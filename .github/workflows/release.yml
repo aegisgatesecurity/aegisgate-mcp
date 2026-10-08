@@ -1,0 +1,180 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g., 1.1.0)'
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  actions: read
+
+env:
+  GO_VERSION: '1.22'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/aegisgate-mcp
+
+jobs:
+  # ========================================
+  # Build binaries — non-CGO (heuristic-only)
+  # ========================================
+  build-lite:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            suffix: -linux-amd64
+          - goos: linux
+            goarch: arm64
+            suffix: -linux-arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          VERSION=${{ github.event.inputs.version || github.ref_name }}
+          go build -ldflags "-s -w -X github.com/aegisgatesecurity/aegisgate-mcp.Version=${VERSION}" \
+            -o mcp-server${{ matrix.suffix }} ./cmd/mcp-server/
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-server-lite-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: mcp-server${{ matrix.suffix }}
+
+  # ========================================
+  # Build binary — CGO (ML-enabled, amd64 only for now)
+  # ========================================
+  build-ml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Build
+        env:
+          CGO_ENABLED: 1
+          CGO_CFLAGS: "-I${{ github.workspace }}/internal/onnxruntime_go"
+          CGO_LDFLAGS: "-L${{ github.workspace }}/lib -lonnxruntime -ldl"
+        run: |
+          VERSION=${{ github.event.inputs.version || github.ref_name }}
+          go build -ldflags "-s -w -X github.com/aegisgatesecurity/aegisgate-mcp.Version=${VERSION}" \
+            -o mcp-server-linux-amd64-ml ./cmd/mcp-server/
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-server-ml-linux-amd64
+          path: mcp-server-linux-amd64-ml
+
+  # ========================================
+  # SBOM — CycloneDX + SPDX
+  # ========================================
+  sbom-attest:
+    needs: [build-lite, build-ml]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@v0.24.3
+        with:
+          format: cyclonedx-json
+          output-file: sbom-cyclonedx.json
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0.24.3
+        with:
+          format: spdx-json
+          output-file: sbom-spdx.json
+      - name: Upload SBOMs
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: |
+            sbom-cyclonedx.json
+            sbom-spdx.json
+
+  # ========================================
+  # Docker build + push
+  # ========================================
+  build-container:
+    needs: [build-ml]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      id-token: write
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ========================================
+  # GitHub Release
+  # ========================================
+  create-release:
+    needs: [build-lite, build-ml, sbom-attest, build-container]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release/
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          files: |
+            release/mcp-server-lite-*/*
+            release/mcp-server-ml-*/*
+            release/sbom/*

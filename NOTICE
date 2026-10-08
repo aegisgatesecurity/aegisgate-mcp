@@ -1,0 +1,80 @@
+NOTICE
+
+AegisGate MCP — Standalone Package
+Copyright 2024-2026 AegisGate Security, LLC
+
+This product includes software developed at AegisGate Security, LLC
+(https://aegisgatesecurity.io).
+
+This product is licensed under the Apache License, Version 2.0.
+
+---
+
+TRADEMARK NOTICE
+
+AegisGate™, AegisGate MCP™, AegisGate Security™, the AegisGate logo,
+and related names, marks, and emblems are trademarks of AegisGate Security, LLC.
+
+The AegisGate and AegisGate Security marks were applied for in April 2026
+and published for opposition by the USPTO on October 13, 2026. Following
+the 30-day opposition period, the marks will proceed to registration.
+The ™ symbol is used until the Certificate of Registration is issued,
+at which point ™ will be replaced with ®.
+
+Permission is granted to use the AegisGate name and marks in connection with
+the unmodified open-source software distribution as published on GitHub.
+
+Use of the AegisGate name, logo, or other brand assets in derivative works,
+commercial products, service offerings, or marketing materials requires prior
+written permission from AegisGate Security, LLC.
+
+Contact: legal@aegisgatesecurity.io
+
+---
+
+VENDORED THIRD-PARTY COMPONENTS
+
+This product includes vendored third-party software. All components are
+included in source or binary form under their respective licenses. No
+external network access is required to build or run this software.
+
+1. onnxruntime_go (MIT License)
+   Copyright (c) 2023 Nathan Otterness
+   Source: internal/onnxruntime_go/
+   License: internal/onnxruntime_go/LICENSE
+   Purpose: Go bindings for ONNX Runtime (CGO, dlopen/dlsym)
+
+2. ONNX Runtime — libonnxruntime.so (MIT License)
+   Copyright (c) Microsoft Corporation
+   Source: lib/libonnxruntime.so
+   License: lib/LICENSE
+   Purpose: Prebuilt shared library for neural network inference
+   Version: 1.29.0 (Linux x86_64)
+
+3. golang.org/x/text — unicode/norm + transform (BSD-3-Clause License)
+   Copyright 2009 The Go Authors
+   Source: internal/textnorm/norm/, internal/textnorm/transform/
+   License: internal/textnorm/LICENSE
+   Purpose: Unicode NFKC normalization for homoglyph/ligature defense
+
+4. CharCNN-BiLSTM v13 Threat Detection Model (Apache License 2.0)
+   Copyright 2024-2026 AegisGate Security, LLC
+   Source: models/threat_cnn_bilstm.onnx
+   License: models/LICENSE
+   Purpose: Neural network model for adversarial input detection
+   SHA-256: 329fd89afe153d0b9f01143c50a9a2dd73b1d3613cc87a07b4b83a93172aeaf0
+
+All vendored components retain their original copyright notices and license
+terms as required by their respective licenses.
+
+---
+
+ZERO EXTERNAL MODULE DEPENDENCIES
+
+The Go module (go.mod) has zero `require` directives. All third-party code
+is vendored into the `internal/` directory. The software can be built and
+run in air-gapped environments without network connectivity.
+
+Two build modes are supported:
+  - CGO_ENABLED=1: Full neural threat detection (default in Docker)
+  - CGO_ENABLED=0: Heuristic-only fallback (smaller image, no ONNX)

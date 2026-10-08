@@ -1,0 +1,225 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 2 * * 0'  # Weekly Sunday 2 AM
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+env:
+  GO_VERSION: '1.22'
+
+jobs:
+  # ========================================
+  # Go vulnerability check
+  # ========================================
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  # ========================================
+  # Gosec — Go SAST
+  # ========================================
+  gosec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Run Gosec
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec -no-fail -fmt sarif -out gosec.sarif -exclude-generated \
+            -exclude G304,G703,G104 \
+            ./... || true
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && github.repository_visibility != 'private'
+        with:
+          sarif_file: gosec.sarif
+        continue-on-error: true
+
+  # ========================================
+  # Trivy — filesystem + container scanning
+  # ========================================
+  trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          trivy-config: '.trivy.yaml'
+          format: 'sarif'
+          output: 'trivy-fs-results.sarif'
+          exit-code: '0'
+        continue-on-error: true
+      - name: Upload Trivy FS SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-fs-results.sarif') != ''
+        with:
+          sarif_file: trivy-fs-results.sarif
+          category: trivy-fs
+        continue-on-error: true
+      - name: Build Docker image for scan
+        run: docker build -t aegisgate-mcp:scan .
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: 'aegisgate-mcp:scan'
+          format: 'sarif'
+          output: 'trivy-image-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+        continue-on-error: true
+      - name: Upload Trivy Image SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-image-results.sarif') != ''
+        with:
+          sarif_file: trivy-image-results.sarif
+          category: trivy-image
+        continue-on-error: true
+
+  # ========================================
+  # Gitleaks — secret detection (git history)
+  # ========================================
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install Gitleaks
+        run: |
+          wget -q https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+          tar -xzf gitleaks_8.21.2_linux_x64.tar.gz
+          chmod +x gitleaks
+          mv gitleaks /usr/local/bin/
+      - name: Run Gitleaks
+        run: |
+          gitleaks detect --source . --config .gitleaks.toml --verbose --report-format sarif --report-path gitleaks.sarif || true
+        continue-on-error: true
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && github.repository_visibility != 'private'
+        with:
+          sarif_file: gitleaks.sarif
+        continue-on-error: true
+
+  # ========================================
+  # TruffleHog — verified secret detection
+  # ========================================
+  trufflehog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: TruffleHog
+        uses: trufflesecurity/trufflehog@v3.97.9
+        with:
+          extra_args: '--only-verified'
+
+  # ========================================
+  # OPSEC scan — private paths, secrets, internal docs
+  # ========================================
+  opsec-scan:
+    name: "OPSEC scan"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run OPSEC scan
+        run: |
+          chmod +x tools/opsec-scan.sh
+          bash tools/opsec-scan.sh
+
+  # ========================================
+  # Standard Go tools — go vet, staticcheck, gofmt
+  # ========================================
+  standard-tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: go vet
+        run: CGO_ENABLED=0 go vet ./...
+      - name: staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          staticcheck ./... || true
+      - name: gofmt
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "UNFORMATTED: $out"; exit 1; fi
+
+  # ========================================
+  # SBOM — CycloneDX + SPDX
+  # ========================================
+  sbom:
+    needs: [govulncheck, gosec]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@v0.24.3
+        with:
+          format: cyclonedx-json
+          output-file: sbom-cyclonedx.json
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0.24.3
+        with:
+          format: spdx-json
+          output-file: sbom-spdx.json
+      - name: Upload SBOMs
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: |
+            sbom-cyclonedx.json
+            sbom-spdx.json
+
+  # ========================================
+  # Security summary
+  # ========================================
+  security-summary:
+    needs: [govulncheck, gosec, trivy, gitleaks, trufflehog, opsec-scan, standard-tools, sbom]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summary
+        run: |
+          echo "## Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Scanner | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| govulncheck | ${{ needs.govulncheck.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| gosec | ${{ needs.gosec.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| trivy | ${{ needs.trivy.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| gitleaks | ${{ needs.gitleaks.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| trufflehog | ${{ needs.trufflehog.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| opsec-scan | ${{ needs.opsec-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| standard-tools | ${{ needs.standard-tools.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| sbom | ${{ needs.sbom.result }} |" >> $GITHUB_STEP_SUMMARY

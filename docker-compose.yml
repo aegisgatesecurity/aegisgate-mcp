@@ -1,0 +1,90 @@
+# =========================================================================
+# AegisGate MCP — Test Lab Docker Compose
+# Integrates with the AegisGate test environment and Kali audit container.
+# =========================================================================
+
+services:
+  # ========================================================================
+  # AegisGate MCP Server
+  # ========================================================================
+  aegisgate-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aegisgate-mcp
+    environment:
+      - MCP_SERVER_ADDR=:8081
+      - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-test-bearer-token}
+      - MCP_AUDIT_LOG=/var/log/mcp/audit.json
+      - MCP_MAX_SESSIONS=50
+      - MCP_MAX_CONNECTIONS=1000
+      - MCP_RATE_LIMIT_RPM=60
+      - MCP_DEMO_TOOLS=true
+      - MCP_TEST_AGENT=true
+      - MCP_HEALTH_ADDR=:8082
+      - MCP_ML_ENABLED=true
+      - MCP_ML_THRESHOLD=0.50
+      - MCP_ML_MODEL=/app/models/threat_cnn_bilstm.onnx
+      - ONNXRUNTIME_SHARED_LIBRARY_PATH=/app/lib/libonnxruntime.so
+      - LD_LIBRARY_PATH=/app/lib
+    ports:
+      - "8081:8081"
+      - "8082:8082"
+    volumes:
+      - mcp-audit:/var/log/mcp
+    networks:
+      - mcp-security-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8082/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ========================================================================
+  # Kali Audit Container — for pentesting the MCP server
+  # ========================================================================
+  mcp-pentest:
+    build:
+      context: ../testlab
+      dockerfile: Dockerfile.kali-audit
+    container_name: mcp-pentest
+    depends_on:
+      aegisgate-mcp:
+        condition: service_started
+    networks:
+      - mcp-security-net
+    volumes:
+      - ./pentest:/audit/scripts:ro
+      - pentest-reports:/audit/reports
+    command: sleep infinity
+    profiles:
+      - pentest
+
+  # ========================================================================
+  # MCP Test Client — for integration testing
+  # ========================================================================
+  mcp-test-client:
+    image: golang:1.22-alpine
+    container_name: mcp-test-client
+    depends_on:
+      aegisgate-mcp:
+        condition: service_started
+    networks:
+      - mcp-security-net
+    volumes:
+      - .:/src:ro
+    working_dir: /src
+    command: go test -v -count=1 ./...
+    profiles:
+      - test
+
+networks:
+  mcp-security-net:
+    driver: bridge
+
+volumes:
+  mcp-audit:
+    driver: local
+  pentest-reports:
+    driver: local

@@ -1,0 +1,54 @@
+# AegisGate MCP — Git Ignore
+
+# Planning directory (local only)
+.plans/
+
+# Working directory (local only)
+.workingdirectory/
+
+# Build artifacts
+bin/
+dist/
+*.exe
+*.dll
+*.dylib
+*.test
+*.out
+*.prof
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/
+
+# Coverage artifacts
+coverage.out
+coverage.html
+coverage-filtered.out
+
+# Binary (built from cmd/mcp-server/)
+/mcp-server
+/mcp-server-bin
+
+# Secrets
+*.pem
+*.key
+.env
+.env.*
+
+# Test artifacts
+/tmp/
+
+# Strategic/business documents (internal only)
+STRATEGY-MARKET-ANALYSIS.md
+TECHNICAL-GAPS-CORRECTED.md
+95-PERCENT-NEEDS.md

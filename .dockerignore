@@ -1,0 +1,9 @@
+# Exclude test artifacts and development files from Docker build context.
+# This reduces context size by ~2MB and avoids unnecessary copying.
+*_test.go
+ml_integration_test.go
+ml_nocgo_test.go
+pentest/
+*.md
+docs/
+mcp-server
