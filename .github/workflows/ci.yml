@@ -110,9 +110,8 @@ jobs:
           CGO_ENABLED=0 go test -v -coverprofile=coverage-lite.out -covermode=atomic ./... 2>&1 | tee test-output.txt
       - name: Check coverage ≥ 90%
         run: |
-          # Extract main package coverage from go test output (not go tool cover,
-          # which aggregates across all packages including 0%-coverage vendored ones)
-          TOTAL=$(grep 'aegisgate-mcp ' test-output.txt | head -1 | grep -oP 'coverage: \K[0-9.]+')
+          # Extract main package coverage from go test output
+          TOTAL=$(grep 'aegisgate-mcp' test-output.txt | grep 'coverage:' | head -1 | sed 's/.*coverage: \([0-9.]*\)%.*/\1/')
           echo "Coverage (non-CGO): ${TOTAL}%"
           if [ -z "$TOTAL" ]; then echo "FAIL: could not compute coverage"; exit 1; fi
           PASS=$(echo "$TOTAL >= 90" | bc)
@@ -147,7 +146,7 @@ jobs:
           go test -v -coverprofile=coverage-ml.out -covermode=atomic ./... 2>&1 | tee test-output-ml.txt
       - name: Check coverage ≥ 90%
         run: |
-          TOTAL=$(grep 'aegisgate-mcp ' test-output-ml.txt | head -1 | grep -oP 'coverage: \K[0-9.]+')
+          TOTAL=$(grep 'aegisgate-mcp' test-output-ml.txt | grep 'coverage:' | head -1 | sed 's/.*coverage: \([0-9.]*\)%.*/\1/')
           echo "Coverage (CGO): ${TOTAL}%"
           if [ -z "$TOTAL" ]; then echo "FAIL: could not compute coverage"; exit 1; fi
           PASS=$(echo "$TOTAL >= 90" | bc)
