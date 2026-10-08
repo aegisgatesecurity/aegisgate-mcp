@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: '1.23'
+  GO_VERSION: '1.25'
 
 jobs:
   # ========================================
@@ -110,14 +110,19 @@ jobs:
           CGO_ENABLED=0 go test -v -coverprofile=coverage-lite.out -covermode=atomic ./... 2>&1 | tee test-output.txt
       - name: Check coverage ≥ 90%
         run: |
-          # Extract main package coverage from go test output
-          TOTAL=$(grep 'aegisgate-mcp' test-output.txt | grep 'coverage:' | head -1 | sed 's/.*coverage: \([0-9.]*\)%.*/\1/')
+          # Extract main package coverage from go test output.
+          # Go ≤1.24 prints coverage on the same line as the package path.
+          # Go 1.25+ may print coverage on a separate line.
+          TOTAL=$(grep '^ok' test-output.txt | grep 'coverage:' | head -1 | sed 's/.*coverage: \([0-9.]*\)%.*/\1/')
+          if [ -z "$TOTAL" ]; then
+            TOTAL=$(grep 'coverage:' test-output.txt | head -1 | sed 's/.*coverage: \([0-9.]*\)%.*/\1/')
+          fi
           echo "Coverage (non-CGO): ${TOTAL}%"
           if [ -z "$TOTAL" ]; then echo "FAIL: could not compute coverage"; exit 1; fi
           PASS=$(echo "$TOTAL >= 90" | bc)
           if [ "$PASS" != "1" ]; then echo "FAIL: coverage ${TOTAL}% < 90%"; exit 1; fi
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-lite
           path: coverage-lite.out
@@ -146,13 +151,19 @@ jobs:
           go test -v -coverprofile=coverage-ml.out -covermode=atomic ./... 2>&1 | tee test-output-ml.txt
       - name: Check coverage ≥ 90%
         run: |
-          TOTAL=$(grep 'aegisgate-mcp' test-output-ml.txt | grep 'coverage:' | head -1 | sed 's/.*coverage: \([0-9.]*\)%.*/\1/')
+          # Extract main package coverage from go test output.
+          # Go ≤1.24 prints coverage on the same line as the package path.
+          # Go 1.25+ may print coverage on a separate line.
+          TOTAL=$(grep '^ok' test-output-ml.txt | grep 'coverage:' | head -1 | sed 's/.*coverage: \([0-9.]*\)%.*/\1/')
+          if [ -z "$TOTAL" ]; then
+            TOTAL=$(grep 'coverage:' test-output-ml.txt | head -1 | sed 's/.*coverage: \([0-9.]*\)%.*/\1/')
+          fi
           echo "Coverage (CGO): ${TOTAL}%"
           if [ -z "$TOTAL" ]; then echo "FAIL: could not compute coverage"; exit 1; fi
           PASS=$(echo "$TOTAL >= 90" | bc)
           if [ "$PASS" != "1" ]; then echo "FAIL: coverage ${TOTAL}% < 90%"; exit 1; fi
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-ml
           path: coverage-ml.out

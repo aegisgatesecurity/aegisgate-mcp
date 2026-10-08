@@ -23,6 +23,10 @@ skip-dirs:
   - docs/
   - "*.md"
 
+# Skip specific files that are known false positives
+skip-files:
+  - .gitleaks.toml  # Contains fake token pattern in allowlist config
+
 # IaC scanning configuration
 misconfig:
   include:

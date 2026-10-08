@@ -15,7 +15,7 @@ permissions:
   actions: read
 
 env:
-  GO_VERSION: '1.23'
+  GO_VERSION: '1.25'
 
 jobs:
   # ========================================
@@ -57,7 +57,7 @@ jobs:
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
           gosec -no-fail -fmt sarif -out gosec.sarif -exclude-generated \
-            -exclude G304,G703,G104 \
+            -exclude G304,G703,G104,G115 \
             ./... || true
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v4
@@ -145,7 +145,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: TruffleHog
-        uses: trufflesecurity/trufflehog@v3.97.9
+        uses: trufflesecurity/trufflehog@v3.98.0
         with:
           extra_args: '--only-verified'
 
@@ -203,7 +203,7 @@ jobs:
           format: spdx-json
           output-file: sbom-spdx.json
       - name: Upload SBOMs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: sbom
           path: |

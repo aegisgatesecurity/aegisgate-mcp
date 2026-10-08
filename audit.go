@@ -41,7 +41,6 @@ type AuditLoggerImpl struct {
 	encoder    *json.Encoder
 	entries    []AuditAction
 	maxEntries int
-	retention  time.Duration
 	lastHash   string // last hash in the chain (for tamper-evidence)
 }
 
