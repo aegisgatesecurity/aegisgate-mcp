@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: '1.22'
+  GO_VERSION: '1.23'
 
 jobs:
   # ========================================
@@ -109,8 +109,9 @@ jobs:
         run: CGO_ENABLED=0 go test -v -coverprofile=coverage-lite.out -covermode=atomic ./...
       - name: Check coverage ≥ 90%
         run: |
-          TOTAL=$(go tool cover -func=coverage-lite.out | grep total | awk '{print $3}' | tr -d '%')
+          TOTAL=$(go tool cover -func=coverage-lite.out | grep "^total:" | awk '{print $3}' | tr -d '%')
           echo "Coverage (non-CGO): ${TOTAL}%"
+          if [ -z "$TOTAL" ]; then echo "FAIL: could not compute coverage"; exit 1; fi
           PASS=$(echo "$TOTAL >= 90" | bc)
           if [ "$PASS" != "1" ]; then echo "FAIL: coverage ${TOTAL}% < 90%"; exit 1; fi
       - name: Upload coverage
@@ -148,8 +149,9 @@ jobs:
           ONNXRUNTIME_SHARED_LIBRARY_PATH: ${{ github.workspace }}/lib/libonnxruntime.so
           LD_LIBRARY_PATH: ${{ github.workspace }}/lib
         run: |
-          TOTAL=$(go tool cover -func=coverage-ml.out | grep total | awk '{print $3}' | tr -d '%')
+          TOTAL=$(go tool cover -func=coverage-ml.out | grep "^total:" | awk '{print $3}' | tr -d '%')
           echo "Coverage (CGO): ${TOTAL}%"
+          if [ -z "$TOTAL" ]; then echo "FAIL: could not compute coverage"; exit 1; fi
           PASS=$(echo "$TOTAL >= 90" | bc)
           if [ "$PASS" != "1" ]; then echo "FAIL: coverage ${TOTAL}% < 90%"; exit 1; fi
       - name: Upload coverage
