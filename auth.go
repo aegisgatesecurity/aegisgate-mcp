@@ -19,6 +19,10 @@ import (
 	"time"
 )
 
+// p256 returns the P-256 curve. Centralised so that if we migrate to
+// crypto/ecdh entirely we only change one place.
+var p256 = elliptic.P256()
+
 // AuthConfig holds authentication configuration.
 type AuthConfig struct {
 	// BearerToken: if set, all requests (except initialize) must include this token.
@@ -387,11 +391,11 @@ func (a *AuthManager) AuthMiddleware(inner HandlerFunc) HandlerFunc {
 // (the format produced by elliptic.Marshal for P-256). Returns the
 // *ecdsa.PublicKey or an error if the bytes are malformed.
 func publicKeyFromSEC1(sec1 []byte) (*ecdsa.PublicKey, error) {
-	x, y := elliptic.Unmarshal(elliptic.P256(), sec1)
+	x, y := elliptic.Unmarshal(p256, sec1)
 	if x == nil {
 		return nil, fmt.Errorf("invalid SEC 1 bytes for P-256")
 	}
-	return &ecdsa.PublicKey{Curve: elliptic.P256(), X: x, Y: y}, nil
+	return &ecdsa.PublicKey{Curve: p256, X: x, Y: y}, nil
 }
 
 // canonicalRequestForSigning produces a canonical JSON representation
@@ -439,7 +443,7 @@ func SignRequest(req *JSONRPCRequest, keyID string, privKey *ecdsa.PrivateKey) e
 	if privKey == nil {
 		return fmt.Errorf("private key is required")
 	}
-	if privKey.Curve != elliptic.P256() {
+	if privKey.Curve != p256 {
 		return fmt.Errorf("private key must be P-256, got %s", privKey.Curve.Params().Name)
 	}
 

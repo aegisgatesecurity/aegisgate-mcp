@@ -20,5 +20,7 @@
   paths = [
     # Test files contain canonical fake tokens for scanner testing
     '''(^|/)enhancements_test\.go$''',
+    # gitleaks config itself contains the fake token string in allowlist
+    '''(^|/)\.gitleaks\.toml$''',
   ]
   stopwords = []

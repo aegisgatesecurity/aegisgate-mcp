@@ -24,7 +24,7 @@
 # =========================================================================
 
 # --- Build stage ---
-FROM golang:1.23-bookworm AS builder
+FROM golang:1.25-bookworm AS builder
 
 # Install C compiler for CGO (gcc is pre-installed in golang:bookworm,
 # but we ensure it's present along with make for the C wrapper)

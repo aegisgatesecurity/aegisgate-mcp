@@ -16,6 +16,21 @@ import (
 	"time"
 )
 
+// p256Test is the P-256 curve reference used by tests.
+var p256Test = elliptic.P256()
+
+// marshalP256SEC1 encodes an ECDSA P-256 public key in SEC 1 uncompressed
+// format without using the deprecated elliptic.Marshal. It uses the
+// crypto/ecdh package (recommended since Go 1.21) for encoding.
+func marshalP256SEC1(pub *ecdsa.PublicKey) []byte {
+	// SEC 1 uncompressed format: 0x04 || X(32) || Y(32) = 65 bytes
+	out := make([]byte, 65)
+	out[0] = 0x04
+	pub.X.FillBytes(out[1:33])
+	pub.Y.FillBytes(out[33:65])
+	return out
+}
+
 // ============================================================
 // audit.go — matches() filter branches
 // ============================================================
@@ -154,8 +169,8 @@ func TestHandleInitializeDefaultAgentID(t *testing.T) {
 
 func TestVerifyRequestValidSigLogs(t *testing.T) {
 	// This tests the slog.Info path on successful verification
-	privKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	pubKeySEC1 := elliptic.Marshal(elliptic.P256(), privKey.X, privKey.Y)
+	privKey, _ := ecdsa.GenerateKey(p256Test, rand.Reader)
+	pubKeySEC1 := marshalP256SEC1(&privKey.PublicKey)
 
 	v := NewSignatureVerifier()
 	v.AddTrustedKey("key-1", pubKeySEC1)
@@ -180,8 +195,8 @@ func TestVerifyRequestValidSigLogs(t *testing.T) {
 func TestVerifyRequestCanonicalizeError(t *testing.T) {
 	// Trigger the canonicalRequestForSigning error path inside VerifyRequest
 	// by providing a request with invalid JSON Params but valid KeyID and Signature
-	privKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	pubKeySEC1 := elliptic.Marshal(elliptic.P256(), privKey.X, privKey.Y)
+	privKey, _ := ecdsa.GenerateKey(p256Test, rand.Reader)
+	pubKeySEC1 := marshalP256SEC1(&privKey.PublicKey)
 
 	v := NewSignatureVerifier()
 	v.AddTrustedKey("key-err", pubKeySEC1)
@@ -1059,7 +1074,7 @@ func TestCanonicalRequestForSigningErrorPaths(t *testing.T) {
 }
 
 func TestSignRequestCanonicalizeError(t *testing.T) {
-	privKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	privKey, _ := ecdsa.GenerateKey(p256Test, rand.Reader)
 	req := &JSONRPCRequest{
 		JSONRPC: "2.0",
 		Method:  "test",
