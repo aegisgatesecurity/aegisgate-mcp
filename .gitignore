@@ -39,6 +39,9 @@ coverage-filtered.out
 /mcp-server
 /mcp-server-bin
 
+# Example binaries (built from examples/)
+/examples/simple-server/simple-server
+
 # Secrets
 *.pem
 *.key

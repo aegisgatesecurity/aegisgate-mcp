@@ -21,6 +21,10 @@
 //   - Health endpoint (HTTP /healthz, /readyz, /stats, /metrics for Prometheus)
 //   - Parameter validation (required fields checked against inputSchema)
 //   - MCP spec compliance (initialize, notifications, tools, resources, prompts, logging, completion, ping)
+//   - Functional resources and prompts with registration handlers
+//   - Tool poisoning detection (scans descriptions/schemas at registration time)
+//   - Streamable HTTP transport (MCP Spec 2025-06-18)
+//   - ML model hot-swap (reload model at runtime without restart)
 //
 // Go standard library only. No external dependencies. Air-gapped capable.
 //
@@ -30,4 +34,4 @@
 package mcpsecurity
 
 // Version is the standalone package version.
-const Version = "1.1.0"
+const Version = "1.2.0"

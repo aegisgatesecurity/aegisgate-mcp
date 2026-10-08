@@ -2,15 +2,16 @@
 
 # 🛡️ AegisGate MCP
 
-**Secure MCP server framework — 21 layers of defense, zero dependencies.**
+**Secure MCP server framework — 22 layers of defense, zero dependencies.**
 
 *A hardened, zero-dependency MCP server written in pure Go. Build your MCP server on a foundation that has security built in from line one — not bolted on after a breach.*
 
-Apache 2.0 · 21 security layers · 30 regex patterns + CharCNN-BiLSTM (v13) ML detection · Zero CVEs · Zero external module dependencies
+Apache 2.0 · 22 security layers · 30 regex patterns + CharCNN-BiLSTM (v13) ML detection · Zero CVEs · Zero external module dependencies
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Go](https://img.shields.io/badge/Go-1.26.6-00ADD8?logo=go)](https://golang.org/)
-[![Coverage](https://img.shields.io/badge/Coverage-90.9%25-brightgreen.svg)](#test-coverage)
+[![Version](https://img.shields.io/badge/Version-1.2.0-blue.svg)](#changelog)
+[![Coverage](https://img.shields.io/badge/Coverage-89.1%25-brightgreen.svg)](#test-coverage)
 [![Dependencies](https://img.shields.io/badge/Dependencies-Zero-success.svg)](#overview)
 [![Docker](https://img.shields.io/badge/Docker-DebianSlim-135MB-blue.svg)](#docker)
 [![ML](https://img.shields.io/badge/ML-CharCNN--BiLSTM_v13-purple.svg)](#ml-threat-detection-l3)
@@ -53,7 +54,7 @@ a breach.
 | CVEs | 3 critical in 6 months | Zero. Ever. |
 | License | MIT | Apache 2.0 |
 
-**21 security layers. Zero dependencies. Zero CVEs. Apache 2.0.**
+**22 security layers. Zero dependencies. Zero CVEs. Apache 2.0.**
 
 > Need proxy mode, OAuth, SIEM, or compliance frameworks? See
 > [When to Upgrade to AegisGate Platform](#when-to-upgrade-to-aegisgate-platform)
@@ -65,7 +66,7 @@ a breach.
 ## Overview
 
 AegisGate MCP is a hardened, zero-dependency MCP server written in pure Go.
-It sits between AI agents and the tools they call, applying **21 layers of
+It sits between AI agents and the tools they call, applying **22 layers of
 defense** to every request — from authentication and RBAC to neural threat
 detection and chain analysis.
 
@@ -79,14 +80,14 @@ dependencies so it can run air-gapped.
 
 | | |
 |---|---|
-| **Version** | 1.1.0 |
+| **Version** | 1.2.0 |
 | **License** | Apache-2.0 |
 | **Go version** | 1.26+ |
 | **Module deps** | Zero (no `require` directives — all third-party code vendored) |
 | **Docker image** | `debian:bookworm-slim`, ~135 MB (ML-enabled) or ~8 MB (heuristic-only) |
 | **Architectures** | amd64, arm64 |
 | **ML model** | CharCNN-BiLSTM v13, 1.6M params, <1ms CPU inference |
-| **Tests** | 344 tests, 10 benchmarks, 3 fuzz targets, 90.9% coverage (non-CGO) / 91.6% (CGO) |
+| **Tests** | 382 tests, 10 benchmarks, 3 fuzz targets, 89.1% coverage (non-CGO) / 90.0% (CGO) |
 
 ---
 
@@ -112,6 +113,9 @@ go build -o mcp-server ./cmd/mcp-server
 
 # stdio mode for local MCP clients (Claude Desktop, Cursor)
 ./mcp-server --transport stdio --demo
+
+# Streamable HTTP mode (MCP 2025-06-18)
+./mcp-server --transport http --addr :8081 --demo
 
 # TLS + mutual TLS
 ./mcp-server --tls --tls-cert server.pem --tls-key server.key --tls-client-ca ca.pem
@@ -193,6 +197,9 @@ func main() {
     }
 
     // Register a custom tool
+    // Note: tools are automatically scanned for prompt-injection poisoning
+    // at registration time. If the description or inputSchema contains
+    // malicious patterns, RegisterTool returns *ToolPoisoningError.
     server.RegisterTool("my_tool", "Does something useful", 40, map[string]interface{}{
         "type": "object",
         "properties": map[string]interface{}{
@@ -203,6 +210,21 @@ func main() {
     server.RegisterToolHandler("my_tool", func(ctx context.Context, params map[string]interface{}) (interface{}, error) {
         return "result", nil
     })
+
+    // Register a resource (MCP resources/list, resources/read)
+    server.RegisterResource("config://app/info", "App Info", "App config as JSON", "application/json",
+        func(ctx context.Context, uri string) (*mcp.ResourceContent, error) {
+            return &mcp.ResourceContent{URI: uri, Text: `{"version":"1.0"}`, MimeType: "application/json"}, nil
+        })
+
+    // Register a prompt (MCP prompts/list, prompts/get)
+    server.RegisterPrompt("code_review", "Generate a code review prompt",
+        []mcp.PromptArgument{{Name: "filename", Required: true}},
+        func(ctx context.Context, args map[string]string) (*mcp.GetPromptResult, error) {
+            return &mcp.GetPromptResult{
+                Messages: []mcp.PromptMessage{{Role: "user", Content: "Review " + args["filename"]}},
+            }, nil
+        })
 
     // Load built-in policy rules
     server.LoadDefaultPolicies()
@@ -215,11 +237,36 @@ func main() {
 }
 ```
 
+See [`examples/simple-server/`](examples/simple-server/) for a complete working example that registers a tool, resource, and prompt.
+
+### ML Model Hot-Swap
+
+Reload the neural threat detection model at runtime without restarting the server:
+
+```go
+// Swap to a new ONNX model file (verifies SHA-256 hash)
+err := server.ReloadMLModel("/path/to/new_model.onnx")
+if err != nil {
+    log.Printf("model reload failed: %v", err)
+}
+```
+
+### Tool Poisoning Detection
+
+All tools registered via `RegisterTool()` are automatically scanned for prompt injection in their descriptions and `inputSchema`. To scan manually:
+
+```go
+err := server.ScanToolForPoisoning("my_tool", description, inputSchema)
+if err != nil {
+    // err is *ToolPoisoningError — do not register this tool
+}
+```
+
 ---
 
 ## Security Layers
 
-AegisGate MCP applies 21 security layers to every request, in order:
+AegisGate MCP applies 22 security layers to every request, in order:
 
 | # | Layer | Description | Source |
 |---|-------|-------------|--------|
@@ -244,6 +291,7 @@ AegisGate MCP applies 21 security layers to every request, in order:
 | 19 | **Neural Threat Detection (L3)** | CharCNN-BiLSTM v13 model scores semantic attacks and evasion variants that regex misses. Two-tier blocking: ≥0.95 blocks independently, 0.50–0.94 requires L1/L2 corroboration | `internal/ml/` |
 | 20 | **Heuristic Evasion Detection** | Detects transposition, vowel deletion, word reversal, leetspeak, encoding, splitting, and zero-width character obfuscation | `internal/ml/evasion_resistance.go` |
 | 21 | **NFKC Unicode Normalization** | Maps Unicode compatibility characters to canonical forms before scanning — defeats homoglyph and ligature attacks (full-width `Ｉｇｎｏｒｅ` → `ignore`) | `internal/ml/normalizer.go` |
+| 22 | **Tool Poisoning Detection** | Scans tool descriptions and `inputSchema` recursively for prompt injection at registration time — rejects poisoned tools before they're callable. Maps to OWASP MCP Top 10 M1 | `handler.go` |
 
 ---
 
@@ -266,7 +314,7 @@ All CLI flags have environment variable equivalents:
 | Flag | Env Var | Default | Description |
 |------|---------|---------|-------------|
 | `--addr` | `MCP_SERVER_ADDR` | `:8081` | Listen address (TCP mode) |
-| `--transport` | `MCP_TRANSPORT` | `tcp` | Transport mode: `tcp` or `stdio` |
+| `--transport` | `MCP_TRANSPORT` | `tcp` | Transport mode: `tcp`, `stdio`, or `http` (Streamable HTTP) |
 | `--token` | `MCP_AUTH_TOKEN` | _(empty)_ | Bearer token for authentication |
 | `--audit` | `MCP_AUDIT_LOG` | _(empty)_ | Audit log file path |
 | `--max-sessions` | `MCP_MAX_SESSIONS` | `50` | Max concurrent sessions |
@@ -330,6 +378,7 @@ All CLI flags have environment variable equivalents:
 |------|------|-------------|
 | `tcp` | `--transport tcp` (default) | TCP listener, supports TLS/mTLS encryption for network deployments |
 | `stdio` | `--transport stdio` | Standard MCP stdin/stdout transport for local clients (Claude Desktop, Cursor) |
+| `http` | `--transport http` | Streamable HTTP (MCP 2025-06-18) — POST JSON-RPC to `/mcp` endpoint, supports TLS-terminating reverse proxies |
 
 ### Health Endpoints
 
@@ -472,9 +521,9 @@ with unsigned clients while enforcing signatures for clients that provide them.
 
 | Category | Tests | Coverage |
 |----------|-------|----------|
-| Unit + integration (non-CGO) | 344 | 90.9% |
-| Unit + integration (CGO + ML) | 348 | 91.6% |
-| Load / break / soak (build tag: `load`) | 7 | — |
+| Unit + integration (non-CGO) | 382 | 89.1% |
+| Unit + integration (CGO + ML) | 386 | 90.0% |
+| Load / break / soak (build tag: `load`) | 9 | — |
 | Benchmarks | 10 | — |
 | Fuzz targets | 3 | — |
 
@@ -611,14 +660,18 @@ go 1.26.6
 
 ## MCP Protocol Support
 
-AegisGate MCP implements the following JSON-RPC methods:
+AegisGate MCP implements the following JSON-RPC methods (MCP Protocol 2025-06-18):
 
 | Method | Type | Description |
 |--------|------|-------------|
-| `initialize` | Request | Parses `clientInfo`, returns `serverInfo` + server capabilities |
+| `initialize` | Request | Parses `clientInfo`, returns `serverInfo` + capabilities (tools, resources, prompts, logging) |
 | `notifications/initialized` | Notification | Handled silently — no response sent (per MCP spec) |
 | `tools/list` | Request | Returns all registered tools with descriptions and `inputSchema` |
 | `tools/call` | Request | Executes a tool after passing all security layers |
+| `resources/list` | Request | Returns all registered resources (URIs, names, descriptions) |
+| `resources/read` | Request | Reads a resource by URI — calls the registered `ResourceHandlerFunc` |
+| `prompts/list` | Request | Returns all registered prompts (names, descriptions, arguments) |
+| `prompts/get` | Request | Gets a prompt by name with optional arguments — calls the registered `PromptHandlerFunc` |
 | `ping` | Request | Health check — returns empty success response |
 
 </details>
@@ -648,7 +701,7 @@ AI Agent (Claude, Cursor, custom)
     │
     ▼
 ┌──────────────────┐
-│  AegisGate MCP   │  ← 21 security layers
+│  AegisGate MCP   │  ← 22 security layers
 │  (TLS/mTLS)      │
 └────────┬─────────┘
          │
@@ -714,6 +767,12 @@ Detailed documentation is available in the `docs/` directory:
 | [`docs/admin-guide.md`](docs/admin-guide.md) | Administration: sessions, audit logs, RBAC management, policies |
 | [`docs/how-to-guides.md`](docs/how-to-guides.md) | Task-specific guides: custom tools, signature verification, mTLS setup |
 | [`docs/model-card.md`](docs/model-card.md) | ML model details: architecture, training data, performance metrics |
+| [`docs/comparison.md`](docs/comparison.md) | Feature comparison: AegisGate MCP vs official MCP SDKs and bolt-on wrappers |
+| [`docs/owasp-mcp-top-10.md`](docs/owasp-mcp-top-10.md) | OWASP MCP Top 10 risk mapping — coverage for all 10 security risks |
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for version history and notable changes.
 
 ---
 
@@ -728,7 +787,7 @@ is the natural upgrade path:
 
 | Need | AegisGate MCP (free) | AegisGate Platform |
 |---|---|---|
-| Secure MCP server framework | ✅ 21 layers, zero deps | ✅ Embedded MCP server |
+| Secure MCP server framework | ✅ 22 layers, zero deps | ✅ Embedded MCP server |
 | ML threat detection | ✅ Capped at 100 inf/min (single-server) | ✅ Unlimited, org-wide |
 | Proxy/gateway mode | ❌ Framework, not proxy | ✅ Sits between clients and all AI services |
 | OAuth 2.0 / OIDC / SSO | ❌ Bearer tokens + API keys | ✅ SAML, OIDC, JWT |

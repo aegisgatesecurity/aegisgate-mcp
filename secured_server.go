@@ -458,12 +458,57 @@ func isToolResultError(resp *JSONRPCResponse) bool {
 	return result.IsError
 }
 func (s *SecuredMCPServer) RegisterTool(name, description string, riskLevel int, inputSchema map[string]interface{}) error {
-	return s.handler.Registry.Register(name, description, riskLevel, inputSchema)
+	return s.handler.Registry.RegisterWithScanning(name, description, riskLevel, inputSchema, s.handler.ToolPoisoningScanner)
 }
 
 // RegisterToolHandler registers a handler function for a tool.
 func (s *SecuredMCPServer) RegisterToolHandler(name string, handler ToolHandlerFunc) error {
 	return s.handler.Registry.RegisterHandler(name, handler)
+}
+
+// RegisterResource registers an MCP resource with a handler function.
+// Resources are server-side data that clients can read via resources/read.
+func (s *SecuredMCPServer) RegisterResource(uri, name, description, mimeType string, handler ResourceHandlerFunc) error {
+	return s.handler.ResourceReg.Register(uri, name, description, mimeType, handler)
+}
+
+// RegisterPrompt registers an MCP prompt template with a handler function.
+// Prompts are server-side templates that clients can invoke via prompts/get.
+func (s *SecuredMCPServer) RegisterPrompt(name, description string, args []PromptArgument, handler PromptHandlerFunc) error {
+	return s.handler.PromptReg.Register(name, description, args, handler)
+}
+
+// ScanToolForPoisoning checks a tool's description and inputSchema for
+// prompt injection or exfiltration patterns. Returns a *ToolPoisoningError
+// if suspicious patterns are found, nil otherwise.
+func (s *SecuredMCPServer) ScanToolForPoisoning(name, desc string, inputSchema map[string]interface{}) *ToolPoisoningError {
+	if s.handler.ToolPoisoningScanner == nil {
+		return nil
+	}
+	if err := validateToolNotPoisoned(s.handler.ToolPoisoningScanner, name, desc, inputSchema); err != nil {
+		if tpe, ok := err.(*ToolPoisoningError); ok {
+			return tpe
+		}
+	}
+	return nil
+}
+
+// ReloadMLModel hot-swaps the ML threat detection model at runtime.
+// The new model is integrity-checked (SHA-256) before loading. If the
+// load fails, the existing model continues to serve — no disruption.
+// Returns an error if ML is not enabled or the model path is invalid.
+func (s *SecuredMCPServer) ReloadMLModel(path string) error {
+	if s.threatDetector == nil {
+		return fmt.Errorf("ML threat detector is not enabled")
+	}
+	if path == "" {
+		path = s.config.MLModelPath
+		if path == "" {
+			absPath, _ := filepath.Abs("models/threat_cnn_bilstm.onnx")
+			path = absPath
+		}
+	}
+	return s.threatDetector.ReloadModel(path)
 }
 
 // RegisterAgent registers an agent with RBAC.
@@ -526,16 +571,18 @@ func (s *SecuredMCPServer) Stop() error {
 // Stats returns runtime statistics.
 func (s *SecuredMCPServer) Stats() map[string]interface{} {
 	return map[string]interface{}{
-		"tools_registered":   s.handler.Registry.Count(),
-		"active_sessions":    s.sessionMgr.ActiveCount(),
-		"active_connections": s.server.ConnectionCount(),
-		"max_connections":    s.config.MaxConnections,
-		"guardrails":         s.guardrails.Stats(),
-		"audit_entries":      s.auditLogger.EntryCount(),
-		"stdio_checks":       s.stdioGuard.Stats(),
-		"trusted_keys":       s.sigVerifier.TrustedKeyCount(),
-		"policy_rules":       s.policyEngine.RuleCount(),
-		"ml_throttle":        s.mlThrottleStatsMap(),
+		"tools_registered":     s.handler.Registry.Count(),
+		"resources_registered": s.handler.ResourceReg.Count(),
+		"prompts_registered":   s.handler.PromptReg.Count(),
+		"active_sessions":      s.sessionMgr.ActiveCount(),
+		"active_connections":   s.server.ConnectionCount(),
+		"max_connections":      s.config.MaxConnections,
+		"guardrails":           s.guardrails.Stats(),
+		"audit_entries":        s.auditLogger.EntryCount(),
+		"stdio_checks":         s.stdioGuard.Stats(),
+		"trusted_keys":         s.sigVerifier.TrustedKeyCount(),
+		"policy_rules":         s.policyEngine.RuleCount(),
+		"ml_throttle":          s.mlThrottleStatsMap(),
 	}
 }
 
@@ -647,7 +694,26 @@ func ServeWithOptions(cfg *ServerConfigV2, opts *ServeOptions) error {
 		<-ctx.Done()
 		return srv.Stop()
 
+	case "http":
+		// Streamable HTTP transport (MCP Spec 2025-06-18).
+		// Builds the same handler chain as TCP mode but serves over HTTP.
+		var chain HandlerFunc = func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
+			return srv.handler.HandleRequest(conn, req)
+		}
+		if srv.config.ScanResponses {
+			chain = srv.wrapWithResponseScan(chain)
+		}
+		chain = srv.guardrails.GuardrailHandler(chain)
+		chain = srv.authMgr.AuthMiddleware(chain)
+
+		transport := newStreamableHTTPTransport(cfg.Address, chain)
+		if err := transport.start(ctx); err != nil {
+			return err
+		}
+		<-ctx.Done()
+		return srv.Stop()
+
 	default:
-		return fmt.Errorf("unknown transport: %s (use tcp or stdio)", opts.Transport)
+		return fmt.Errorf("unknown transport: %s (use tcp, stdio, or http)", opts.Transport)
 	}
 }

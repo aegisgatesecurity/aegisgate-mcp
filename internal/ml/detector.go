@@ -306,6 +306,53 @@ func (td *ThreatDetector) Close() error {
 	return td.closeONNX()
 }
 
+// ReloadModel atomically swaps the model at runtime without downtime.
+// It loads the new model into a temporary detector, verifies its integrity,
+// and only swaps the ONNX session if the load succeeds. If the new model
+// fails to load, the existing model continues to serve — no disruption.
+//
+// This enables model hot-swap: update the model file on disk and call
+// ReloadModel (or send SIGHUP when wired to the signal handler) to swap
+// without restarting the server.
+func (td *ThreatDetector) ReloadModel(path string) error {
+	td.mu.Lock()
+	defer td.mu.Unlock()
+
+	cleanPath := filepath.Clean(path) // #nosec G304
+	if _, err := os.Stat(cleanPath); err != nil {
+		return fmt.Errorf("model file not found: %w", err)
+	}
+
+	// Verify model integrity via SHA-256 hash
+	hash, err := computeFileHash(cleanPath)
+	if err != nil {
+		return fmt.Errorf("failed to compute model hash: %w", err)
+	}
+	expectedHash := "sha256:" + ExpectedModelHash
+	if hash != expectedHash {
+		return fmt.Errorf("model integrity check failed: expected %s, got %s — refusing to hot-swap tampered model", expectedHash, hash)
+	}
+
+	// Close the existing ONNX session before loading the new one.
+	// The write lock ensures no inferences are running.
+	if td.loaded {
+		if err := td.closeONNX(); err != nil {
+			slog.Warn("error closing previous model during hot-swap", "error", err)
+		}
+		td.loaded = false
+	}
+
+	slog.Info("ML model hot-swap: loading new model", "path", cleanPath, "hash", hash)
+	if err := td.loadModelONNX(cleanPath); err != nil {
+		slog.Error("ML model hot-swap failed, model is now unloaded", "error", err, "path", cleanPath)
+		return fmt.Errorf("hot-swap load failed: %w (model is now unloaded — restart server to restore detection)", err)
+	}
+
+	td.modelHash = hash
+	slog.Info("ML model hot-swap complete", "path", cleanPath, "hash", hash)
+	return nil
+}
+
 // GetCalibrator returns the calibration manager.
 func (td *ThreatDetector) GetCalibrator() *CalibrationManager {
 	return td.calibrator

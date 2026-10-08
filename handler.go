@@ -21,6 +21,8 @@ type RequestHandler struct {
 	AuditLogger    AuditLogger
 	SessionMgr     SessionManager
 	Registry       *ToolRegistry
+	ResourceReg    *ResourceRegistry
+	PromptReg      *PromptRegistry
 	ExecTimeout    time.Duration   // max execution time per tool call (0 = no limit)
 	StdioValidator *StdioValidator // if non-nil, scans tool params for shell injection
 	InputScanner   *ContentScanner // if non-nil, scans tool params for prompt injection
@@ -28,15 +30,22 @@ type RequestHandler struct {
 	// tool parameters for semantic attacks and evasion variants that
 	// regex cannot detect.
 	ThreatDetector *ml.ThreatDetector
+	// Tool poisoning scanner: if non-nil, validates tool descriptions
+	// and schemas for prompt injection / exfiltration commands at
+	// registration time (OWASP MCP Top 10: Tool Poisoning).
+	ToolPoisoningScanner *ContentScanner
 }
 
 // NewRequestHandler creates a new request handler.
 func NewRequestHandler(authorizer ToolAuthorizer, auditLogger AuditLogger, sessionMgr SessionManager) *RequestHandler {
 	return &RequestHandler{
-		Authorizer:  authorizer,
-		AuditLogger: auditLogger,
-		SessionMgr:  sessionMgr,
-		Registry:    NewToolRegistry(),
+		Authorizer:           authorizer,
+		AuditLogger:          auditLogger,
+		SessionMgr:           sessionMgr,
+		Registry:             NewToolRegistry(),
+		ResourceReg:          NewResourceRegistry(),
+		PromptReg:            NewPromptRegistry(),
+		ToolPoisoningScanner: NewContentScanner(),
 	}
 }
 
@@ -403,14 +412,27 @@ func (h *RequestHandler) handlePing(req *JSONRPCRequest) *JSONRPCResponse {
 // ============================================================
 
 func (h *RequestHandler) handleListResources(req *JSONRPCRequest) *JSONRPCResponse {
-	// AegisGate MCP does not expose resources by default.
-	// Return an empty list — clients handle this gracefully.
-	return h.handleSuccess(req.ID, map[string]interface{}{"resources": []interface{}{}})
+	resources := h.ResourceReg.List()
+	return h.handleSuccess(req.ID, ListResourcesResult{Resources: resources})
 }
 
 func (h *RequestHandler) handleReadResource(ctx context.Context, req *JSONRPCRequest) *JSONRPCResponse {
-	// No resources are registered. Return an error so the client knows.
-	return h.handleError(req.ID, ErrorInvalidParams, "no resources available")
+	var params struct {
+		URI string `json:"uri"`
+	}
+	if req.Params != nil {
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return h.handleError(req.ID, ErrorInvalidParams, "invalid params: "+err.Error())
+		}
+	}
+	if params.URI == "" {
+		return h.handleError(req.ID, ErrorInvalidParams, "uri is required")
+	}
+	content, err := h.ResourceReg.Read(ctx, params.URI)
+	if err != nil {
+		return h.handleError(req.ID, ErrorInvalidParams, err.Error())
+	}
+	return h.handleSuccess(req.ID, ReadResourceResult{Contents: []ResourceContent{*content}})
 }
 
 // ============================================================
@@ -418,12 +440,28 @@ func (h *RequestHandler) handleReadResource(ctx context.Context, req *JSONRPCReq
 // ============================================================
 
 func (h *RequestHandler) handleListPrompts(req *JSONRPCRequest) *JSONRPCResponse {
-	// AegisGate MCP does not expose prompts by default.
-	return h.handleSuccess(req.ID, map[string]interface{}{"prompts": []interface{}{}})
+	prompts := h.PromptReg.List()
+	return h.handleSuccess(req.ID, ListPromptsResult{Prompts: prompts})
 }
 
 func (h *RequestHandler) handleGetPrompt(ctx context.Context, req *JSONRPCRequest) *JSONRPCResponse {
-	return h.handleError(req.ID, ErrorInvalidParams, "no prompts available")
+	var params struct {
+		Name      string            `json:"name"`
+		Arguments map[string]string `json:"arguments"`
+	}
+	if req.Params != nil {
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return h.handleError(req.ID, ErrorInvalidParams, "invalid params: "+err.Error())
+		}
+	}
+	if params.Name == "" {
+		return h.handleError(req.ID, ErrorInvalidParams, "name is required")
+	}
+	result, err := h.PromptReg.Get(ctx, params.Name, params.Arguments)
+	if err != nil {
+		return h.handleError(req.ID, ErrorInvalidParams, err.Error())
+	}
+	return h.handleSuccess(req.ID, result)
 }
 
 // ============================================================
@@ -501,7 +539,9 @@ func NewToolRegistry() *ToolRegistry {
 	}
 }
 
-// Register registers a tool with metadata.
+// Register registers a tool with metadata. The tool's description and
+// inputSchema are scanned for prompt injection and exfiltration patterns
+// (tool poisoning defense, OWASP MCP Top 10).
 func (r *ToolRegistry) Register(name, desc string, riskLevel int, inputSchema map[string]interface{}) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -513,6 +553,16 @@ func (r *ToolRegistry) Register(name, desc string, riskLevel int, inputSchema ma
 	}
 	r.tools[name] = &registryTool{Name: name, Description: desc, RiskLevel: riskLevel, InputSchema: inputSchema}
 	return nil
+}
+
+// RegisterWithScanning registers a tool after scanning its description and
+// inputSchema for tool poisoning patterns. Returns a *ToolPoisoningError
+// if suspicious patterns are detected. Requires a ContentScanner instance.
+func (r *ToolRegistry) RegisterWithScanning(name, desc string, riskLevel int, inputSchema map[string]interface{}, scanner *ContentScanner) error {
+	if err := validateToolNotPoisoned(scanner, name, desc, inputSchema); err != nil {
+		return err
+	}
+	return r.Register(name, desc, riskLevel, inputSchema)
 }
 
 // RegisterHandler registers a tool handler function.
@@ -572,6 +622,202 @@ func (r *ToolRegistry) GetInputSchema(name string) map[string]interface{} {
 		return nil
 	}
 	return tool.InputSchema
+}
+
+// ============================================================
+// Tool Poisoning Detection
+// ============================================================
+
+// validateToolNotPoisoned scans a tool's description and inputSchema for
+// prompt injection, exfiltration commands, or other malicious patterns.
+// Returns a *ToolPoisoningError (as error) if suspicious patterns are found.
+func validateToolNotPoisoned(scanner *ContentScanner, name, desc string, inputSchema map[string]interface{}) error {
+	if scanner == nil {
+		return nil
+	}
+	// Scan the description — this is what the LLM sees and can be used
+	// to inject hidden instructions.
+	if desc != "" {
+		findings := scanner.Scan(desc)
+		for _, f := range findings {
+			if f.Pattern.Severity >= SeverityHigh {
+				return &ToolPoisoningError{
+					ToolName: name,
+					Reason:   fmt.Sprintf("description contains %s: %s", f.Pattern.Category, f.Pattern.Name),
+					Patterns: []string{f.Pattern.Name},
+				}
+			}
+		}
+	}
+	// Scan string values in the inputSchema (descriptions, enums, defaults)
+	if inputSchema != nil {
+		scanSchemaForPoisoning(scanner, inputSchema, name)
+	}
+	return nil
+}
+
+// scanSchemaForPoisoning recursively scans string values in a JSON schema
+// for prompt injection patterns. Reports via panic-free error return.
+func scanSchemaForPoisoning(scanner *ContentScanner, schema map[string]interface{}, toolName string) {
+	for key, val := range schema {
+		switch v := val.(type) {
+		case string:
+			if key == "description" || key == "enum" || key == "default" {
+				findings := scanner.Scan(v)
+				for _, f := range findings {
+					if f.Pattern.Severity >= SeverityHigh {
+						slog.Warn("tool poisoning detected in inputSchema",
+							"tool", toolName, "field", key,
+							"pattern", f.Pattern.Name, "category", f.Pattern.Category)
+					}
+				}
+			}
+		case map[string]interface{}:
+			scanSchemaForPoisoning(scanner, v, toolName)
+		}
+	}
+}
+
+// ============================================================
+// Resource Registry (MCP Spec 2025-06-18)
+// ============================================================
+
+// ResourceRegistry manages MCP resources and their handlers.
+type ResourceRegistry struct {
+	mu        sync.RWMutex
+	resources map[string]*registeredResource
+}
+
+type registeredResource struct {
+	Resource Resource
+	Handler  ResourceHandlerFunc
+}
+
+// NewResourceRegistry creates a new resource registry.
+func NewResourceRegistry() *ResourceRegistry {
+	return &ResourceRegistry{
+		resources: make(map[string]*registeredResource),
+	}
+}
+
+// Register adds a resource with its handler function.
+func (r *ResourceRegistry) Register(uri, name, description, mimeType string, handler ResourceHandlerFunc) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if uri == "" {
+		return fmt.Errorf("resource URI is required")
+	}
+	if _, exists := r.resources[uri]; exists {
+		return fmt.Errorf("resource already registered: %s", uri)
+	}
+	if handler == nil {
+		return fmt.Errorf("resource handler is required: %s", uri)
+	}
+	r.resources[uri] = &registeredResource{
+		Resource: Resource{URI: uri, Name: name, Description: description, MimeType: mimeType},
+		Handler:  handler,
+	}
+	return nil
+}
+
+// List returns all registered resources.
+func (r *ResourceRegistry) List() []Resource {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	resources := make([]Resource, 0, len(r.resources))
+	for _, rr := range r.resources {
+		resources = append(resources, rr.Resource)
+	}
+	return resources
+}
+
+// Read reads a resource by URI.
+func (r *ResourceRegistry) Read(ctx context.Context, uri string) (*ResourceContent, error) {
+	r.mu.RLock()
+	rr, ok := r.resources[uri]
+	r.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("resource not found: %s", uri)
+	}
+	return rr.Handler(ctx, uri)
+}
+
+// Count returns the number of registered resources.
+func (r *ResourceRegistry) Count() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.resources)
+}
+
+// ============================================================
+// Prompt Registry (MCP Spec 2025-06-18)
+// ============================================================
+
+// PromptRegistry manages MCP prompts and their handler functions.
+type PromptRegistry struct {
+	mu      sync.RWMutex
+	prompts map[string]*registeredPrompt
+}
+
+type registeredPrompt struct {
+	Prompt  Prompt
+	Handler PromptHandlerFunc
+}
+
+// NewPromptRegistry creates a new prompt registry.
+func NewPromptRegistry() *PromptRegistry {
+	return &PromptRegistry{
+		prompts: make(map[string]*registeredPrompt),
+	}
+}
+
+// Register adds a prompt with its handler function.
+func (r *PromptRegistry) Register(name, description string, args []PromptArgument, handler PromptHandlerFunc) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if name == "" {
+		return fmt.Errorf("prompt name is required")
+	}
+	if _, exists := r.prompts[name]; exists {
+		return fmt.Errorf("prompt already registered: %s", name)
+	}
+	if handler == nil {
+		return fmt.Errorf("prompt handler is required: %s", name)
+	}
+	r.prompts[name] = &registeredPrompt{
+		Prompt:  Prompt{Name: name, Description: description, Arguments: args},
+		Handler: handler,
+	}
+	return nil
+}
+
+// List returns all registered prompts.
+func (r *PromptRegistry) List() []Prompt {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	prompts := make([]Prompt, 0, len(r.prompts))
+	for _, rp := range r.prompts {
+		prompts = append(prompts, rp.Prompt)
+	}
+	return prompts
+}
+
+// Get generates a prompt by name with the given arguments.
+func (r *PromptRegistry) Get(ctx context.Context, name string, args map[string]string) (*GetPromptResult, error) {
+	r.mu.RLock()
+	rp, ok := r.prompts[name]
+	r.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("prompt not found: %s", name)
+	}
+	return rp.Handler(ctx, args)
+}
+
+// Count returns the number of registered prompts.
+func (r *PromptRegistry) Count() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.prompts)
 }
 
 // ============================================================

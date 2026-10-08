@@ -23,16 +23,12 @@ func TestResourcesList(t *testing.T) {
 	if resp == nil || resp.Error != nil {
 		t.Fatalf("resources/list failed: %v", resp)
 	}
-	result, ok := resp.Result.(map[string]interface{})
+	result, ok := resp.Result.(ListResourcesResult)
 	if !ok {
-		t.Fatalf("expected map, got %T", resp.Result)
+		t.Fatalf("expected ListResourcesResult, got %T", resp.Result)
 	}
-	resources, ok := result["resources"].([]interface{})
-	if !ok {
-		t.Fatal("missing resources field")
-	}
-	if len(resources) != 0 {
-		t.Errorf("expected empty resources, got %d", len(resources))
+	if len(result.Resources) != 0 {
+		t.Errorf("expected empty resources, got %d", len(result.Resources))
 	}
 }
 
@@ -73,16 +69,12 @@ func TestPromptsList(t *testing.T) {
 	if resp == nil || resp.Error != nil {
 		t.Fatalf("prompts/list failed: %v", resp)
 	}
-	result, ok := resp.Result.(map[string]interface{})
+	result, ok := resp.Result.(ListPromptsResult)
 	if !ok {
-		t.Fatalf("expected map, got %T", resp.Result)
+		t.Fatalf("expected ListPromptsResult, got %T", resp.Result)
 	}
-	prompts, ok := result["prompts"].([]interface{})
-	if !ok {
-		t.Fatal("missing prompts field")
-	}
-	if len(prompts) != 0 {
-		t.Errorf("expected empty prompts, got %d", len(prompts))
+	if len(result.Prompts) != 0 {
+		t.Errorf("expected empty prompts, got %d", len(result.Prompts))
 	}
 }
 
