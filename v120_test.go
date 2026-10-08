@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -812,6 +813,242 @@ func TestStreamableHTTPSubscribeNotFound(t *testing.T) {
 	}
 }
 
+// ============================================================
+// Streamable HTTP SSE Streaming (v1.3.0)
+// ============================================================
+
+// httpPostWithSessionSSE sends a POST request with SSE Accept header.
+func httpPostWithSessionSSE(t *testing.T, addr, sessionID, body string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest("POST", "http://"+addr+"/mcp", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	if sessionID != "" {
+		req.Header.Set("Mcp-Session-Id", sessionID)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("HTTP request failed: %v", err)
+	}
+	return resp
+}
+
+func TestStreamableHTTPSSEInitialize(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
+		return handler.HandleRequest(conn, req)
+	})
+	ln, err := startStreamableHTTPListener(transport)
+	if err != nil {
+		t.Fatalf("startStreamableHTTPListener failed: %v", err)
+	}
+	defer ln.Close()
+
+	// Send initialize with SSE Accept header
+	body := `{"jsonrpc":"2.0","method":"initialize","id":1}`
+	resp := httpPostWithSessionSSE(t, ln.Addr().String(), "", body)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("StatusCode = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		t.Errorf("Content-Type = %q, want text/event-stream", ct)
+	}
+	if sid := resp.Header.Get("Mcp-Session-Id"); sid == "" {
+		t.Error("missing Mcp-Session-Id header")
+	}
+
+	// Read SSE body and verify it contains data: prefix
+	sseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read SSE body: %v", err)
+	}
+	sseStr := string(sseBody)
+	if !strings.Contains(sseStr, "data: ") {
+		t.Errorf("SSE body does not contain 'data: ' prefix: %s", sseStr)
+	}
+	if !strings.Contains(sseStr, "protocolVersion") {
+		t.Errorf("SSE body does not contain protocolVersion: %s", sseStr)
+	}
+}
+
+func TestStreamableHTTPSSEPing(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
+		return handler.HandleRequest(conn, req)
+	})
+	ln, err := startStreamableHTTPListener(transport)
+	if err != nil {
+		t.Fatalf("startStreamableHTTPListener failed: %v", err)
+	}
+	defer ln.Close()
+
+	sid := httpInitAndGetSession(t, ln.Addr().String())
+
+	body := `{"jsonrpc":"2.0","method":"ping","id":2}`
+	resp := httpPostWithSessionSSE(t, ln.Addr().String(), sid, body)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("StatusCode = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		t.Errorf("Content-Type = %q, want text/event-stream", ct)
+	}
+
+	sseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read SSE body: %v", err)
+	}
+	sseStr := string(sseBody)
+	if !strings.Contains(sseStr, "data: ") {
+		t.Errorf("SSE body does not contain 'data: ' prefix: %s", sseStr)
+	}
+	if !strings.Contains(sseStr, `"method"`) && !strings.Contains(sseStr, `"result"`) {
+		// Ping returns an empty result, so check for the response structure
+		if !strings.Contains(sseStr, `"jsonrpc"`) {
+			t.Errorf("SSE body does not contain jsonrpc response: %s", sseStr)
+		}
+	}
+}
+
+func TestStreamableHTTPSSENotification(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
+		return handler.HandleRequest(conn, req)
+	})
+	ln, err := startStreamableHTTPListener(transport)
+	if err != nil {
+		t.Fatalf("startStreamableHTTPListener failed: %v", err)
+	}
+	defer ln.Close()
+
+	sid := httpInitAndGetSession(t, ln.Addr().String())
+
+	// Send a notification with SSE
+	body := `{"jsonrpc":"2.0","method":"notifications/initialized"}`
+	resp := httpPostWithSessionSSE(t, ln.Addr().String(), sid, body)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("StatusCode = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		t.Errorf("Content-Type = %q, want text/event-stream", ct)
+	}
+
+	// Notifications in SSE mode should get a comment ack, not a data event
+	sseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read SSE body: %v", err)
+	}
+	sseStr := string(sseBody)
+	if !strings.Contains(sseStr, ": ack") {
+		t.Errorf("SSE notification body does not contain ': ack': %q", sseStr)
+	}
+}
+
+func TestStreamableHTTPSSEToolsList(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	_ = handler.Registry.Register("test_tool", "A test tool", 10, map[string]interface{}{"type": "object"})
+	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
+		return handler.HandleRequest(conn, req)
+	})
+	ln, err := startStreamableHTTPListener(transport)
+	if err != nil {
+		t.Fatalf("startStreamableHTTPListener failed: %v", err)
+	}
+	defer ln.Close()
+
+	sid := httpInitAndGetSession(t, ln.Addr().String())
+
+	body := `{"jsonrpc":"2.0","method":"tools/list","id":3}`
+	resp := httpPostWithSessionSSE(t, ln.Addr().String(), sid, body)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("StatusCode = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		t.Errorf("Content-Type = %q, want text/event-stream", ct)
+	}
+
+	sseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read SSE body: %v", err)
+	}
+	sseStr := string(sseBody)
+	if !strings.Contains(sseStr, "data: ") {
+		t.Errorf("SSE body does not contain 'data: ': %s", sseStr)
+	}
+	if !strings.Contains(sseStr, "test_tool") {
+		t.Errorf("SSE body does not contain tool name: %s", sseStr)
+	}
+}
+
+func TestStreamableHTTPSSESessionRequired(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
+		return handler.HandleRequest(conn, req)
+	})
+	ln, err := startStreamableHTTPListener(transport)
+	if err != nil {
+		t.Fatalf("startStreamableHTTPListener failed: %v", err)
+	}
+	defer ln.Close()
+
+	// Ping with SSE but no session → 404
+	body := `{"jsonrpc":"2.0","method":"ping","id":1}`
+	resp := httpPostWithSessionSSE(t, ln.Addr().String(), "", body)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("StatusCode = %d, want %d (session required)", resp.StatusCode, http.StatusNotFound)
+	}
+}
+
+func TestStreamableHTTPAcceptJSONStillWorks(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
+		return handler.HandleRequest(conn, req)
+	})
+	ln, err := startStreamableHTTPListener(transport)
+	if err != nil {
+		t.Fatalf("startStreamableHTTPListener failed: %v", err)
+	}
+	defer ln.Close()
+
+	sid := httpInitAndGetSession(t, ln.Addr().String())
+
+	// Send a request with Accept: application/json — should get plain JSON, not SSE
+	body := `{"jsonrpc":"2.0","method":"ping","id":2}`
+	req, _ := http.NewRequest("POST", "http://"+ln.Addr().String()+"/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Mcp-Session-Id", sid)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("HTTP request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+
+	// Verify it's plain JSON, not SSE
+	respBody, _ := io.ReadAll(resp.Body)
+	if strings.Contains(string(respBody), "data: ") {
+		t.Errorf("response should be plain JSON, not SSE: %s", string(respBody))
+	}
+	if !strings.Contains(string(respBody), `"jsonrpc"`) {
+		t.Errorf("response should contain jsonrpc: %s", string(respBody))
+	}
+}
+
 func TestSecuredServerRegisterResource(t *testing.T) {
 	cfg := DefaultServerConfig()
 	cfg.DemoTools = false
@@ -860,8 +1097,8 @@ func TestSecuredServerRegisterPrompt(t *testing.T) {
 // ============================================================
 
 func TestVersion120(t *testing.T) {
-	if Version != "1.2.2" {
-		t.Errorf("Version = %q, want %q", Version, "1.2.2")
+	if Version != "1.3.0" {
+		t.Errorf("Version = %q, want %q", Version, "1.3.0")
 	}
 }
 
