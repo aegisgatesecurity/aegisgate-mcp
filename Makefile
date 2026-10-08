@@ -7,7 +7,7 @@
 CGO ?= 0
 
 # CGO build flags (only used when CGO=1)
-CGO_LDFLAGS := -L$(CURDIR)/lib -lonnxruntime
+CGO_LDFLAGS := -L$(CURDIR)/lib/$(shell go env GOARCH) -lonnxruntime
 CGO_CFLAGS := -I$(CURDIR)/internal/onnxruntime_go
 
 VERSION ?= 1.1.0

@@ -278,6 +278,25 @@ func (h *healthServer) handlePrometheus(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	// ML throttle stats
+	if mlStats, ok := stats["ml_throttle"].(map[string]interface{}); ok {
+		if allowed, ok := mlStats["total_allowed"]; ok {
+			buf.WriteString("# HELP aegisgate_mcp_ml_inferences_total Total ML inferences allowed\n")
+			buf.WriteString("# TYPE aegisgate_mcp_ml_inferences_total counter\n")
+			fmt.Fprintf(&buf, "aegisgate_mcp_ml_inferences_total %v\n", allowed)
+		}
+		if throttled, ok := mlStats["total_throttled"]; ok {
+			buf.WriteString("# HELP aegisgate_mcp_ml_throttled_total Total ML inferences throttled (fallback to L1/L2)\n")
+			buf.WriteString("# TYPE aegisgate_mcp_ml_throttled_total counter\n")
+			fmt.Fprintf(&buf, "aegisgate_mcp_ml_throttled_total %v\n", throttled)
+		}
+		if inFlight, ok := mlStats["current_in_flight"]; ok {
+			buf.WriteString("# HELP aegisgate_mcp_ml_in_flight Current concurrent ML inferences\n")
+			buf.WriteString("# TYPE aegisgate_mcp_ml_in_flight gauge\n")
+			fmt.Fprintf(&buf, "aegisgate_mcp_ml_in_flight %v\n", inFlight)
+		}
+	}
+
 	buf.WriteString("# HELP aegisgate_mcp_up Server is running\n")
 	buf.WriteString("# TYPE aegisgate_mcp_up gauge\n")
 	buf.WriteString("aegisgate_mcp_up 1\n")
