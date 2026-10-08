@@ -341,9 +341,8 @@ func applyCharacterSplitting(text string, rng *rand.Rand) string {
 // applyWhitespaceInjection inserts whitespace between characters.
 func applyWhitespaceInjection(text string, rng *rand.Rand) string {
 	spaces := []rune{' ', '\t', '\u00a0', '\u200b', '\u3000'}
-	runes := []rune(text)
 	var result []rune
-	for _, r := range runes {
+	for _, r := range text {
 		result = append(result, r)
 		if rng.Float64() < 0.2 && r != ' ' {
 			result = append(result, spaces[rng.Intn(len(spaces))])
@@ -359,9 +358,8 @@ func applyEncodingMix(text string, rng *rand.Rand) string {
 		'&': "&amp;", ' ': "%20", '/': "%2F",
 	}
 
-	runes := []rune(text)
 	var result strings.Builder
-	for _, r := range runes {
+	for _, r := range text {
 		if entity, ok := htmlEntities[r]; ok && rng.Float64() < 0.3 {
 			result.WriteString(entity)
 		} else {

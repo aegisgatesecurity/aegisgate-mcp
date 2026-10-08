@@ -135,9 +135,13 @@ type healthServer struct {
 func newHealthServer(addr string, srv *SecuredMCPServer) *healthServer {
 	mux := http.NewServeMux()
 	hs := &healthServer{
-		addr:      addr,
-		server:    srv,
-		httpSrv:   &http.Server{Addr: addr, Handler: mux},
+		addr:   addr,
+		server: srv,
+		httpSrv: &http.Server{
+			Addr:              addr,
+			Handler:           mux,
+			ReadHeaderTimeout: 10 * time.Second,
+		},
 		startTime: time.Now(),
 	}
 
@@ -160,9 +164,9 @@ func (h *healthServer) start(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		h.httpSrv.Shutdown(shutdownCtx)
+		_ = h.httpSrv.Shutdown(shutdownCtx)
 	}()
 
 	go func() {

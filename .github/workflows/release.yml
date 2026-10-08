@@ -17,7 +17,7 @@ permissions:
   actions: read
 
 env:
-  GO_VERSION: '1.23'
+  GO_VERSION: '1.25'
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository_owner }}/aegisgate-mcp
 
@@ -52,7 +52,7 @@ jobs:
           go build -ldflags "-s -w -X github.com/aegisgatesecurity/aegisgate-mcp.Version=${VERSION}" \
             -o mcp-server${{ matrix.suffix }} ./cmd/mcp-server/
       - name: Upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mcp-server-lite-${{ matrix.goos }}-${{ matrix.goarch }}
           path: mcp-server${{ matrix.suffix }}
@@ -78,7 +78,7 @@ jobs:
           go build -ldflags "-s -w -X github.com/aegisgatesecurity/aegisgate-mcp.Version=${VERSION}" \
             -o mcp-server-linux-amd64-ml ./cmd/mcp-server/
       - name: Upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mcp-server-ml-linux-amd64
           path: mcp-server-linux-amd64-ml
@@ -106,7 +106,7 @@ jobs:
           format: spdx-json
           output-file: sbom-spdx.json
       - name: Upload SBOMs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: sbom
           path: |
@@ -127,9 +127,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - name: Log in to Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -165,7 +165,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: release/
       - name: Create GitHub Release

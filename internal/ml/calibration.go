@@ -415,19 +415,6 @@ func computeAUROC(entries []ShadowLogEntry, isActualThreat func(ShadowLogEntry) 
 	return auroc
 }
 
-// sortFloat64s sorts a slice of float64 in ascending order.
-func sortFloat64s(s []float64) {
-	for i := 1; i < len(s); i++ {
-		key := s[i]
-		j := i - 1
-		for j >= 0 && s[j] > key {
-			s[j+1] = s[j]
-			j--
-		}
-		s[j+1] = key
-	}
-}
-
 // sortFloat64sDesc sorts a slice of float64 in descending order.
 func sortFloat64sDesc(s []float64) {
 	for i := 1; i < len(s); i++ {
