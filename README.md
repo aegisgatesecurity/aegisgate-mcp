@@ -1,6 +1,6 @@
 # AegisGate MCP
 
-**A security-first Model Context Protocol (MCP) server for AI agents in any environment.**
+[🌐 Website](https://aegisgatesecurity.io) · [🔒 Security](SECURITY.md) · [💬 Discussions](https://github.com/aegisgatesecurity/aegisgate-mcp/discussions) · [📚 Docs](docs/)
 
 ![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)
 ![License](https://img.shields.io/badge/License-Apache--2.0-blue)
@@ -10,8 +10,42 @@
 ![ML](https://img.shields.io/badge/ML-CharCNN--BiLSTM_v13-purple)
 ![Arch](https://img.shields.io/badge/Arch-amd64%20%7C%20arm64-orange)
 
+[![GitHub stars](https://img.shields.io/github/stars/aegisgatesecurity/aegisgate-mcp?style=social)](https://github.com/aegisgatesecurity/aegisgate-mcp) — **If AegisGate MCP helps you secure your AI agents, please consider ⭐ starring this repo. It helps others discover it.**
+
 > **AegisGate Security™** is a trademark of AegisGate Security, LLC, filed with the USPTO.
 > "AegisGate MCP" is an unregistered product name. See [Trademark](#trademark) below.
+
+---
+
+## Why AegisGate MCP?
+
+**38% of MCP servers have no authentication. 590+ security advisories. 3 critical CVEs in the official MCP SDKs in 6 months — including CVSS 9.8 remote code execution and the "Mother of All AI Supply Chains" flaw affecting 150M+ downloads.**
+
+The official MCP SDKs give you the protocol. They don't give you security.
+No authentication. No audit logging. No threat detection. No rate limiting.
+No RBAC. Every server built on a bare SDK starts with a blank security posture
+and it's on you to build it — or skip it, as 38% of servers do.
+
+**AegisGate MCP is the secure alternative.** Build your MCP server on a
+foundation that has security built in from line one — not bolted on after
+a breach.
+
+| | Official MCP SDKs | AegisGate MCP |
+|---|---|---|
+| Authentication | ❌ Bring your own | ✅ Bearer tokens + API keys + lockout |
+| Authorization | ❌ Nothing | ✅ 4-tier RBAC with per-tool permissions |
+| Audit logging | ❌ Nothing | ✅ Tamper-evident SHA-256 hash chain |
+| Threat detection | ❌ Nothing | ✅ 30 regex patterns + neural ML (<1ms) |
+| Supply chain risk | ❌ npm/PyPI deps | ✅ Zero dependencies (Go stdlib only) |
+| CVEs | 3 critical in 6 months | Zero. Ever. |
+| License | MIT | Apache 2.0 |
+
+**21 security layers. Zero dependencies. Zero CVEs. Apache 2.0.**
+
+> Need proxy mode, OAuth, SIEM, or compliance frameworks? See
+> [When to Upgrade to AegisGate Platform](#when-to-upgrade-to-aegisgate-platform)
+> below — or explore **[AegisGate Rampart](https://github.com/aegisgatesecurity/aegisgate-rampart)**
+> for local AI API proxy protection.
 
 ---
 
@@ -24,7 +58,7 @@ detection and chain analysis.
 
 Standard MCP servers assume a trusted local environment. In production —
 whether that's a cloud SaaS platform, an enterprise data pipeline, or an
-OT/ICS plant network — agents may execute commands, query databases, or
+air-gapped plant network — agents may execute commands, query databases, or
 interact with critical systems. A single unauthorized or malicious tool call
 can cause data exfiltration, process disruption, or worse. AegisGate MCP
 wraps every tool call in defense-in-depth, all with zero external module
@@ -741,3 +775,7 @@ commercial products, service offerings, or marketing materials requires prior
 written permission from AegisGate Security, LLC.
 
 Contact: legal@aegisgatesecurity.io
+
+---
+
+[🌐 AegisGate Security](https://aegisgatesecurity.io) · [💬 Discord](https://discord.gg/cvJ4QcY9B) · [✉️ support@aegisgatesecurity.io](mailto:support@aegisgatesecurity.io) · [🐦 X/Twitter](https://x.com/aegisgate) · [📱 Telegram](https://t.me/+imsWrOY4QpcxYzIx) · [🐘 Mastodon](https://mastodon.social/@aegisgate) · [💬 GitHub Discussions](https://github.com/aegisgatesecurity/aegisgate-mcp/discussions)
