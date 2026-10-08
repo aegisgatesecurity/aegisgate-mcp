@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 
@@ -57,6 +58,13 @@ func (h *RequestHandler) HandleRequest(conn *Connection, req *JSONRPCRequest) *J
 		return h.handleInitialize(ctx, conn, req)
 	case "notifications/initialized":
 		return h.handleInitialized(ctx, conn, req)
+	case "notifications/cancelled":
+		// Client-initiated cancellation (MCP spec 2025-06-18).
+		// Notification — no response. The request ID being cancelled
+		// is in params.requestId. Our tool execution uses context
+		// timeouts, so cancellation is handled by the context.
+		slog.Info("client cancelled request", "method", req.Method)
+		return nil
 	case "tools/list", "tool/list":
 		return h.handleListTools(ctx, req)
 	case "tools/call", "tool/call":
@@ -127,9 +135,9 @@ func (h *RequestHandler) handleInitialize(ctx context.Context, conn *Connection,
 	result := map[string]interface{}{
 		"protocolVersion": ProtocolVersion,
 		"capabilities": map[string]interface{}{
-			"tools":     map[string]interface{}{"listChanged": true},
-			"resources": map[string]interface{}{"subscribe": true, "listChanged": true},
-			"prompts":   map[string]interface{}{"listChanged": true},
+			"tools":     map[string]interface{}{},
+			"resources": map[string]interface{}{},
+			"prompts":   map[string]interface{}{},
 			"logging":   map[string]interface{}{},
 		},
 		"serverInfo": map[string]interface{}{
@@ -161,7 +169,20 @@ func (h *RequestHandler) handleInitialized(ctx context.Context, conn *Connection
 
 func (h *RequestHandler) handleListTools(ctx context.Context, req *JSONRPCRequest) *JSONRPCResponse {
 	tools := h.Registry.ToMCPFormat()
-	return h.handleSuccess(req.ID, ListToolsResult{Tools: tools})
+
+	// Parse cursor for pagination (MCP spec: cursor is an opaque string)
+	cursor := parseCursor(req.Params)
+	pageSize := DefaultPageSize
+
+	result := ListToolsResult{Tools: tools}
+	if cursor > 0 || len(tools) > pageSize {
+		paged, next := paginateTools(tools, cursor, pageSize)
+		result.Tools = paged
+		if next > 0 {
+			result.NextCursor = strconv.Itoa(next)
+		}
+	}
+	return h.handleSuccess(req.ID, result)
 }
 
 func (h *RequestHandler) handleCallTool(ctx context.Context, conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
@@ -413,7 +434,19 @@ func (h *RequestHandler) handlePing(req *JSONRPCRequest) *JSONRPCResponse {
 
 func (h *RequestHandler) handleListResources(req *JSONRPCRequest) *JSONRPCResponse {
 	resources := h.ResourceReg.List()
-	return h.handleSuccess(req.ID, ListResourcesResult{Resources: resources})
+
+	cursor := parseCursor(req.Params)
+	pageSize := DefaultPageSize
+
+	result := ListResourcesResult{Resources: resources}
+	if cursor > 0 || len(resources) > pageSize {
+		paged, next := paginateResources(resources, cursor, pageSize)
+		result.Resources = paged
+		if next > 0 {
+			result.NextCursor = strconv.Itoa(next)
+		}
+	}
+	return h.handleSuccess(req.ID, result)
 }
 
 func (h *RequestHandler) handleReadResource(ctx context.Context, req *JSONRPCRequest) *JSONRPCResponse {
@@ -441,7 +474,19 @@ func (h *RequestHandler) handleReadResource(ctx context.Context, req *JSONRPCReq
 
 func (h *RequestHandler) handleListPrompts(req *JSONRPCRequest) *JSONRPCResponse {
 	prompts := h.PromptReg.List()
-	return h.handleSuccess(req.ID, ListPromptsResult{Prompts: prompts})
+
+	cursor := parseCursor(req.Params)
+	pageSize := DefaultPageSize
+
+	result := ListPromptsResult{Prompts: prompts}
+	if cursor > 0 || len(prompts) > pageSize {
+		paged, next := paginatePrompts(prompts, cursor, pageSize)
+		result.Prompts = paged
+		if next > 0 {
+			result.NextCursor = strconv.Itoa(next)
+		}
+	}
+	return h.handleSuccess(req.ID, result)
 }
 
 func (h *RequestHandler) handleGetPrompt(ctx context.Context, req *JSONRPCRequest) *JSONRPCResponse {
@@ -873,4 +918,89 @@ func validateRequiredParams(registry *ToolRegistry, toolName string, params map[
 		}
 	}
 	return missing
+}
+
+// ============================================================
+// Pagination helpers (MCP Spec 2025-06-18 — cursor-based)
+// ============================================================
+
+// DefaultPageSize is the maximum number of items returned per page
+// when the client doesn't specify a limit. MCP servers typically use
+// 50-100. We use 100 to avoid paginating in the common case.
+const DefaultPageSize = 100
+
+// parseCursor extracts the cursor (offset) from request params.
+// Returns 0 if no cursor is present (first page).
+func parseCursor(params json.RawMessage) int {
+	if params == nil {
+		return 0
+	}
+	var p struct {
+		Cursor string `json:"cursor"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return 0
+	}
+	if p.Cursor == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(p.Cursor)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+// paginateTools returns a page of tools and the next cursor (0 if no more pages).
+func paginateTools(tools []Tool, cursor, pageSize int) ([]Tool, int) {
+	start := cursor
+	if start >= len(tools) {
+		return []Tool{}, 0
+	}
+	end := start + pageSize
+	if end > len(tools) {
+		end = len(tools)
+	}
+	paged := tools[start:end]
+	next := 0
+	if end < len(tools) {
+		next = end
+	}
+	return paged, next
+}
+
+// paginateResources returns a page of resources and the next cursor.
+func paginateResources(resources []Resource, cursor, pageSize int) ([]Resource, int) {
+	start := cursor
+	if start >= len(resources) {
+		return []Resource{}, 0
+	}
+	end := start + pageSize
+	if end > len(resources) {
+		end = len(resources)
+	}
+	paged := resources[start:end]
+	next := 0
+	if end < len(resources) {
+		next = end
+	}
+	return paged, next
+}
+
+// paginatePrompts returns a page of prompts and the next cursor.
+func paginatePrompts(prompts []Prompt, cursor, pageSize int) ([]Prompt, int) {
+	start := cursor
+	if start >= len(prompts) {
+		return []Prompt{}, 0
+	}
+	end := start + pageSize
+	if end > len(prompts) {
+		end = len(prompts)
+	}
+	paged := prompts[start:end]
+	next := 0
+	if end < len(prompts) {
+		next = end
+	}
+	return paged, next
 }

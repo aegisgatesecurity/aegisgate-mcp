@@ -70,7 +70,8 @@ type ContentBlock struct {
 }
 
 type ListToolsResult struct {
-	Tools []Tool `json:"tools"`
+	Tools      []Tool `json:"tools"`
+	NextCursor string `json:"nextCursor,omitempty"`
 }
 
 // --- Resource Structures (MCP Spec 2025-06-18) ---
@@ -93,7 +94,8 @@ type ResourceContent struct {
 
 // ListResourcesResult is the response for resources/list.
 type ListResourcesResult struct {
-	Resources []Resource `json:"resources"`
+	Resources  []Resource `json:"resources"`
+	NextCursor string     `json:"nextCursor,omitempty"`
 }
 
 // ReadResourceResult is the response for resources/read.
@@ -134,7 +136,8 @@ type GetPromptResult struct {
 
 // ListPromptsResult is the response for prompts/list.
 type ListPromptsResult struct {
-	Prompts []Prompt `json:"prompts"`
+	Prompts    []Prompt `json:"prompts"`
+	NextCursor string   `json:"nextCursor,omitempty"`
 }
 
 // PromptHandlerFunc generates a prompt from the given arguments.

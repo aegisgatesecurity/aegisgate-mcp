@@ -5,6 +5,33 @@ All notable changes to AegisGate MCP are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] — 2026-10-08
+
+### Changed
+
+- Removed unimplemented capability advertisements from `initialize` response:
+  `listChanged` (tools, resources, prompts) and `subscribe` (resources) are
+  no longer advertised. These features are not yet implemented — advertising
+  them would cause clients to attempt to use them and fail silently
+- Version bumped from 1.2.0 to 1.2.1
+
+### Added
+
+- **Cursor-based pagination** for `tools/list`, `resources/list`, and
+  `prompts/list` per MCP 2025-06-18 spec. Clients pass a `cursor` parameter;
+  the server returns `nextCursor` if more items are available. Default page
+  size is 100 items
+- **`notifications/cancelled`** — client-initiated cancellation notification
+  (MCP 2025-06-18). Logged and acknowledged; tool execution cancellation
+  is handled via existing context timeouts
+
+### Security
+
+- Honesty in capability advertisements: the server no longer claims to
+  support features it doesn't implement. This prevents clients from relying
+  on non-existent subscription or change-notification behavior
+
+
 ## [1.2.0] — 2026-10-08
 
 ### Added

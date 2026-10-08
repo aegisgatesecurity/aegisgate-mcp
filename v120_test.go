@@ -7,6 +7,7 @@ package mcpsecurity
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -648,8 +649,8 @@ func TestSecuredServerRegisterPrompt(t *testing.T) {
 // ============================================================
 
 func TestVersion120(t *testing.T) {
-	if Version != "1.2.0" {
-		t.Errorf("Version = %q, want %q", Version, "1.2.0")
+	if Version != "1.2.1" {
+		t.Errorf("Version = %q, want %q", Version, "1.2.1")
 	}
 }
 
@@ -835,5 +836,208 @@ func TestSecuredServerScanToolForPoisoningClean(t *testing.T) {
 	})
 	if poisonErr != nil {
 		t.Errorf("expected nil for clean tool, got: %v", poisonErr)
+	}
+}
+
+// ============================================================
+// Protocol Compliance: v1.2.1 — Pagination, Cancelled, Capabilities
+// ============================================================
+
+func TestInitializeNoFalseCapabilities(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	req := &JSONRPCRequest{Method: "initialize", Params: json.RawMessage(`{"clientInfo":{"name":"test","version":"1.0"}}`), ID: 1}
+	resp := handler.HandleRequest(nil, req)
+	if resp == nil || resp.Error != nil {
+		t.Fatalf("initialize failed: %v", resp)
+	}
+	result, ok := resp.Result.(map[string]interface{})
+	if !ok {
+		t.Fatal("expected map result")
+	}
+	caps, ok := result["capabilities"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected capabilities map")
+	}
+	// tools should NOT have listChanged (we don't send list-changed notifications)
+	toolsCaps, ok := caps["tools"].(map[string]interface{})
+	if ok {
+		if _, hasListChanged := toolsCaps["listChanged"]; hasListChanged {
+			t.Error("tools capabilities should not advertise listChanged")
+		}
+	}
+	// resources should NOT have subscribe or listChanged
+	resCaps, ok := caps["resources"].(map[string]interface{})
+	if ok {
+		if _, has := resCaps["subscribe"]; has {
+			t.Error("resources capabilities should not advertise subscribe")
+		}
+		if _, has := resCaps["listChanged"]; has {
+			t.Error("resources capabilities should not advertise listChanged")
+		}
+	}
+}
+
+func TestNotificationsCancelled(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	// notifications/cancelled is a notification (no ID) → should return nil
+	req := &JSONRPCRequest{Method: "notifications/cancelled", Params: json.RawMessage(`{"requestId":"abc123"}`)}
+	resp := handler.HandleRequest(nil, req)
+	if resp != nil {
+		t.Errorf("notifications/cancelled should return nil, got: %+v", resp)
+	}
+}
+
+func TestPaginationToolsSmallList(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	// Register 3 tools — under page size, should return all with no nextCursor
+	for i := 0; i < 3; i++ {
+		name := fmt.Sprintf("tool_%d", i)
+		handler.Registry.Register(name, "test tool", 10, nil)
+	}
+	req := &JSONRPCRequest{Method: "tools/list", ID: 1}
+	resp := handler.HandleRequest(nil, req)
+	if resp == nil || resp.Error != nil {
+		t.Fatalf("tools/list failed: %v", resp)
+	}
+	result, ok := resp.Result.(ListToolsResult)
+	if !ok {
+		t.Fatalf("expected ListToolsResult, got %T", resp.Result)
+	}
+	if len(result.Tools) != 3 {
+		t.Errorf("expected 3 tools, got %d", len(result.Tools))
+	}
+	if result.NextCursor != "" {
+		t.Errorf("expected empty nextCursor, got %q", result.NextCursor)
+	}
+}
+
+func TestPaginationToolsLargeList(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	// Register 150 tools — exceeds DefaultPageSize (100)
+	for i := 0; i < 150; i++ {
+		name := fmt.Sprintf("tool_%d", i)
+		handler.Registry.Register(name, "test tool", 10, nil)
+	}
+	// First page
+	req := &JSONRPCRequest{Method: "tools/list", ID: 1}
+	resp := handler.HandleRequest(nil, req)
+	if resp == nil || resp.Error != nil {
+		t.Fatalf("tools/list failed: %v", resp)
+	}
+	result, ok := resp.Result.(ListToolsResult)
+	if !ok {
+		t.Fatalf("expected ListToolsResult, got %T", resp.Result)
+	}
+	if len(result.Tools) != 100 {
+		t.Errorf("expected 100 tools in first page, got %d", len(result.Tools))
+	}
+	if result.NextCursor != "100" {
+		t.Errorf("expected nextCursor=100, got %q", result.NextCursor)
+	}
+	// Second page
+	req2 := &JSONRPCRequest{Method: "tools/list", Params: json.RawMessage(`{"cursor":"100"}`), ID: 2}
+	resp2 := handler.HandleRequest(nil, req2)
+	if resp2 == nil || resp2.Error != nil {
+		t.Fatalf("tools/list page 2 failed: %v", resp2)
+	}
+	result2, ok := resp2.Result.(ListToolsResult)
+	if !ok {
+		t.Fatalf("expected ListToolsResult, got %T", resp2.Result)
+	}
+	if len(result2.Tools) != 50 {
+		t.Errorf("expected 50 tools in second page, got %d", len(result2.Tools))
+	}
+	if result2.NextCursor != "" {
+		t.Errorf("expected empty nextCursor on last page, got %q", result2.NextCursor)
+	}
+}
+
+func TestPaginationResourcesLargeList(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	// Register 150 resources
+	for i := 0; i < 150; i++ {
+		uri := fmt.Sprintf("test://resource_%d", i)
+		handler.ResourceReg.Register(uri, fmt.Sprintf("Resource %d", i), "test", "text/plain",
+			func(ctx context.Context, uri string) (*ResourceContent, error) {
+				return &ResourceContent{URI: uri, Text: "data"}, nil
+			})
+	}
+	req := &JSONRPCRequest{Method: "resources/list", ID: 1}
+	resp := handler.HandleRequest(nil, req)
+	if resp == nil || resp.Error != nil {
+		t.Fatalf("resources/list failed: %v", resp)
+	}
+	result, ok := resp.Result.(ListResourcesResult)
+	if !ok {
+		t.Fatalf("expected ListResourcesResult, got %T", resp.Result)
+	}
+	if len(result.Resources) != 100 {
+		t.Errorf("expected 100 resources, got %d", len(result.Resources))
+	}
+	if result.NextCursor != "100" {
+		t.Errorf("expected nextCursor=100, got %q", result.NextCursor)
+	}
+}
+
+func TestPaginationPromptsLargeList(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	// Register 150 prompts
+	for i := 0; i < 150; i++ {
+		name := fmt.Sprintf("prompt_%d", i)
+		handler.PromptReg.Register(name, "test", nil,
+			func(ctx context.Context, args map[string]string) (*GetPromptResult, error) {
+				return &GetPromptResult{}, nil
+			})
+	}
+	req := &JSONRPCRequest{Method: "prompts/list", ID: 1}
+	resp := handler.HandleRequest(nil, req)
+	if resp == nil || resp.Error != nil {
+		t.Fatalf("prompts/list failed: %v", resp)
+	}
+	result, ok := resp.Result.(ListPromptsResult)
+	if !ok {
+		t.Fatalf("expected ListPromptsResult, got %T", resp.Result)
+	}
+	if len(result.Prompts) != 100 {
+		t.Errorf("expected 100 prompts, got %d", len(result.Prompts))
+	}
+	if result.NextCursor != "100" {
+		t.Errorf("expected nextCursor=100, got %q", result.NextCursor)
+	}
+}
+
+func TestPaginationCursorBeyondEnd(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	handler.Registry.Register("only_tool", "test", 10, nil)
+	// Request cursor way beyond end
+	req := &JSONRPCRequest{Method: "tools/list", Params: json.RawMessage(`{"cursor":"9999"}`), ID: 1}
+	resp := handler.HandleRequest(nil, req)
+	if resp == nil || resp.Error != nil {
+		t.Fatalf("tools/list failed: %v", resp)
+	}
+	result, ok := resp.Result.(ListToolsResult)
+	if !ok {
+		t.Fatalf("expected ListToolsResult, got %T", resp.Result)
+	}
+	if len(result.Tools) != 0 {
+		t.Errorf("expected 0 tools, got %d", len(result.Tools))
+	}
+}
+
+func TestPaginationInvalidCursor(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	handler.Registry.Register("tool_a", "test", 10, nil)
+	// Invalid cursor should be treated as offset 0
+	req := &JSONRPCRequest{Method: "tools/list", Params: json.RawMessage(`{"cursor":"not-a-number"}`), ID: 1}
+	resp := handler.HandleRequest(nil, req)
+	if resp == nil || resp.Error != nil {
+		t.Fatalf("tools/list failed: %v", resp)
+	}
+	result, ok := resp.Result.(ListToolsResult)
+	if !ok {
+		t.Fatalf("expected ListToolsResult, got %T", resp.Result)
+	}
+	if len(result.Tools) != 1 {
+		t.Errorf("expected 1 tool (invalid cursor → offset 0), got %d", len(result.Tools))
 	}
 }
