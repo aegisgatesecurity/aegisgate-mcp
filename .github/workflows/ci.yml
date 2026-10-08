@@ -117,7 +117,7 @@ jobs:
           PASS=$(echo "$TOTAL >= 90" | bc)
           if [ "$PASS" != "1" ]; then echo "FAIL: coverage ${TOTAL}% < 90%"; exit 1; fi
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-lite
           path: coverage-lite.out
@@ -152,7 +152,7 @@ jobs:
           PASS=$(echo "$TOTAL >= 90" | bc)
           if [ "$PASS" != "1" ]; then echo "FAIL: coverage ${TOTAL}% < 90%"; exit 1; fi
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-ml
           path: coverage-ml.out

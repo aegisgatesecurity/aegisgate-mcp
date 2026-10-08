@@ -52,7 +52,7 @@ jobs:
           go build -ldflags "-s -w -X github.com/aegisgatesecurity/aegisgate-mcp.Version=${VERSION}" \
             -o mcp-server${{ matrix.suffix }} ./cmd/mcp-server/
       - name: Upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mcp-server-lite-${{ matrix.goos }}-${{ matrix.goarch }}
           path: mcp-server${{ matrix.suffix }}
@@ -78,7 +78,7 @@ jobs:
           go build -ldflags "-s -w -X github.com/aegisgatesecurity/aegisgate-mcp.Version=${VERSION}" \
             -o mcp-server-linux-amd64-ml ./cmd/mcp-server/
       - name: Upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mcp-server-ml-linux-amd64
           path: mcp-server-linux-amd64-ml
@@ -106,7 +106,7 @@ jobs:
           format: spdx-json
           output-file: sbom-spdx.json
       - name: Upload SBOMs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: sbom
           path: |
