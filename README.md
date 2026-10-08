@@ -1,75 +1,45 @@
-# AegisGate MCP™
+# AegisGate MCP
 
-**A security-first Model Context Protocol (MCP) server for OT/ICS and regulated environments.**
+**A security-first Model Context Protocol (MCP) server for AI agents in any environment.**
 
-![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
+![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)
 ![License](https://img.shields.io/badge/License-Apache--2.0-blue)
 ![Dependencies](https://img.shields.io/badge/Dependencies-Zero-success)
 ![Coverage](https://img.shields.io/badge/Coverage-92.3%25-brightgreen)
 ![Docker](https://img.shields.io/badge/Docker-DebianSlim-135MB-blue)
 ![ML](https://img.shields.io/badge/ML-CharCNN--BiLSTM_v13-purple)
+![Arch](https://img.shields.io/badge/Arch-amd64%20%7C%20arm64-orange)
 
-> **AegisGate MCP™** is a trademark of AegisGate Security, LLC.
+> **AegisGate Security™** is a trademark of AegisGate Security, LLC, filed with the USPTO.
+> "AegisGate MCP" is an unregistered product name. See [Trademark](#trademark) below.
 
 ---
 
 ## Overview
 
-AegisGate MCP™ is a hardened, zero-dependency MCP server written in pure Go.
-It is designed for Operational Technology (OT), Industrial Control Systems (ICS),
-and other regulated environments where AI agents interact with critical
-infrastructure and every tool call must be authenticated, authorized, audited,
-and analyzed.
+AegisGate MCP is a hardened, zero-dependency MCP server written in pure Go.
+It sits between AI agents and the tools they call, applying **21 layers of
+defense** to every request — from authentication and RBAC to neural threat
+detection and chain analysis.
 
-**Why does this exist?** Standard MCP servers assume a trusted local
-environment. In OT/ICS deployments, agents may execute commands on SCADA
-systems, query historian databases, or interact with PLCs. A single
-unauthorized or malicious tool call can cause physical damage, process
-disruption, or safety incidents. AegisGate MCP wraps every tool call in
-**21 layers of defense**, from authentication and RBAC to neural threat
-detection and chain analysis — all with zero external module dependencies
-so it can run air-gapped.
+Standard MCP servers assume a trusted local environment. In production —
+whether that's a cloud SaaS platform, an enterprise data pipeline, or an
+OT/ICS plant network — agents may execute commands, query databases, or
+interact with critical systems. A single unauthorized or malicious tool call
+can cause data exfiltration, process disruption, or worse. AegisGate MCP
+wraps every tool call in defense-in-depth, all with zero external module
+dependencies so it can run air-gapped.
 
 | | |
 |---|---|
-| **Product** | AegisGate MCP™ |
 | **Version** | 1.1.0 |
 | **License** | Apache-2.0 |
-| **Go version** | 1.22+ |
+| **Go version** | 1.26+ |
 | **Module deps** | Zero (no `require` directives — all third-party code vendored) |
 | **Docker image** | `debian:bookworm-slim`, ~135 MB (ML-enabled) or ~8 MB (heuristic-only) |
+| **Architectures** | amd64, arm64 |
 | **ML model** | CharCNN-BiLSTM v13, 1.6M params, <1ms CPU inference |
-| **Tests** | 335 tests + 10 benchmarks, 92.3% coverage (both CGO and non-CGO) |
-
----
-
-## Security Layers
-
-AegisGate MCP applies 21 security layers to every request, in order:
-
-| # | Layer | Description | Source |
-|---|-------|-------------|--------|
-| 1 | **Authentication** | Bearer token + API key, constant-time comparison, automatic lockout on repeated failures | `auth.go` |
-| 2 | **Signature Verification** | ECDSA P-256 anti-forgery — verifies message signatures against trusted public keys | `auth.go` |
-| 3 | **Session Management** | 256-bit cryptographically random session IDs, expiry, anti-hijacking checks | `session.go` |
-| 4 | **RBAC** | 4-tier role hierarchy (restricted → standard → privileged → admin), per-tool permissions | `rbac.go` |
-| 5 | **Policy Engine** | Allow/deny rules with conditions, priorities, time windows, and parameter patterns | `policy.go` |
-| 6 | **Guardrails** | Per-session tool call limits and rate limiting | `guardrails.go` |
-| 7 | **Chain Analysis** | Detects privilege escalation, data exfiltration chains, and repeated dangerous tool calls | `guardrails.go` |
-| 8 | **Token Bucket Rate Limiting** | Sliding-window rate limiting with token bucket algorithm (RPM + burst capacity) | `guardrails.go` |
-| 9 | **Input Scanning** | Scans tool *parameters* for prompt injection before execution (~30 patterns) | `handler.go`, `scanner.go` |
-| 10 | **Response Scanning** | Scans tool *responses* for PII, secrets, XSS, and prompt injection (~30 detection patterns) | `scanner.go` |
-| 11 | **Secret Redaction** | Scrubs sensitive data (PII, secrets) from responses before returning to the client | `scanner.go` |
-| 12 | **Tool Execution Timeout** | Configurable per-call timeout prevents hanging or runaway tools | `handler.go` |
-| 13 | **STDIO Validation** | Shell injection prevention via allowlist + blocklist for stdio transport commands | `stdio_guard.go` |
-| 14 | **Audit Logging** | All MCP actions logged to file + in-memory, queryable for compliance, tamper-evident hash chain | `audit.go` |
-| 15 | **TLS / mTLS Transport** | Encrypted TCP connections with optional mutual TLS for OT/ICS networks | `config.go`, `server.go` |
-| 16 | **stdio Transport** | Standard MCP client transport for Claude Desktop, Cursor, and other local integrations | `transport.go` |
-| 17 | **Health Endpoint** | HTTP `/healthz`, `/readyz`, `/stats` endpoints on a separate listener | `transport.go` |
-| 18 | **Parameter Validation** | Required fields checked against each tool's `inputSchema` before execution | `handler.go` |
-| 19 | **Neural Threat Detection (L3)** | CharCNN-BiLSTM v13 model scores semantic attacks and evasion variants that regex misses. Two-tier blocking: ≥0.95 blocks independently, 0.50–0.94 requires L1/L2 corroboration | `internal/ml/` |
-| 20 | **Heuristic Evasion Detection** | Detects transposition, vowel deletion, word reversal, leetspeak, encoding, splitting, and zero-width character obfuscation | `internal/ml/evasion_resistance.go` |
-| 21 | **NFKC Unicode Normalization** | Maps Unicode compatibility characters to canonical forms before scanning — defeats homoglyph and ligature attacks (full-width `Ｉｇｎｏｒｅ` → `ignore`) | `internal/ml/normalizer.go` |
+| **Tests** | 337+ tests, 10 benchmarks, 92.3% coverage (both CGO and non-CGO) |
 
 ---
 
@@ -124,7 +94,8 @@ docker run -p 8081:8081 aegisgate-mcp:lite --demo
 The default Docker image uses `debian:bookworm-slim` with CGO enabled,
 including the vendored ONNX Runtime and CharCNN-BiLSTM v13 model for
 full neural threat detection. A `--build-arg CGO_ENABLED=0` variant
-produces a smaller heuristic-only image.
+produces a smaller heuristic-only image. Multi-arch builds support
+both `linux/amd64` and `linux/arm64`.
 
 ### ML Threat Detection (L3)
 
@@ -199,7 +170,38 @@ func main() {
 
 ---
 
-## Configuration
+## Security Layers
+
+AegisGate MCP applies 21 security layers to every request, in order:
+
+| # | Layer | Description | Source |
+|---|-------|-------------|--------|
+| 1 | **Authentication** | Bearer token + API key, constant-time comparison, automatic lockout on repeated failures | `auth.go` |
+| 2 | **Signature Verification** | ECDSA P-256 anti-forgery — verifies message signatures against trusted public keys | `auth.go` |
+| 3 | **Session Management** | 256-bit cryptographically random session IDs, expiry, anti-hijacking checks | `session.go` |
+| 4 | **RBAC** | 4-tier role hierarchy (restricted → standard → privileged → admin), per-tool permissions | `rbac.go` |
+| 5 | **Policy Engine** | Allow/deny rules with conditions, priorities, time windows, and parameter patterns | `policy.go` |
+| 6 | **Guardrails** | Per-session tool call limits and rate limiting | `guardrails.go` |
+| 7 | **Chain Analysis** | Detects privilege escalation, data exfiltration chains, and repeated dangerous tool calls | `guardrails.go` |
+| 8 | **Token Bucket Rate Limiting** | Sliding-window rate limiting with token bucket algorithm (RPM + burst capacity) | `guardrails.go` |
+| 9 | **Input Scanning** | Scans tool *parameters* for prompt injection before execution (~30 patterns) | `handler.go`, `scanner.go` |
+| 10 | **Response Scanning** | Scans tool *responses* for PII, secrets, XSS, and prompt injection (~30 detection patterns) | `scanner.go` |
+| 11 | **Secret Redaction** | Scrubs sensitive data (PII, secrets) from responses before returning to the client | `scanner.go` |
+| 12 | **Tool Execution Timeout** | Configurable per-call timeout prevents hanging or runaway tools | `handler.go` |
+| 13 | **STDIO Validation** | Shell injection prevention via allowlist + blocklist for stdio transport commands | `stdio_guard.go` |
+| 14 | **Audit Logging** | All MCP actions logged to file + in-memory, queryable for compliance, tamper-evident hash chain | `audit.go` |
+| 15 | **TLS / mTLS Transport** | Encrypted TCP connections with optional mutual TLS | `config.go`, `server.go` |
+| 16 | **stdio Transport** | Standard MCP client transport for Claude Desktop, Cursor, and other local integrations | `transport.go` |
+| 17 | **Health Endpoint** | HTTP `/healthz`, `/readyz`, `/stats` endpoints on a separate listener | `transport.go` |
+| 18 | **Parameter Validation** | Required fields checked against each tool's `inputSchema` before execution | `handler.go` |
+| 19 | **Neural Threat Detection (L3)** | CharCNN-BiLSTM v13 model scores semantic attacks and evasion variants that regex misses. Two-tier blocking: ≥0.95 blocks independently, 0.50–0.94 requires L1/L2 corroboration | `internal/ml/` |
+| 20 | **Heuristic Evasion Detection** | Detects transposition, vowel deletion, word reversal, leetspeak, encoding, splitting, and zero-width character obfuscation | `internal/ml/evasion_resistance.go` |
+| 21 | **NFKC Unicode Normalization** | Maps Unicode compatibility characters to canonical forms before scanning — defeats homoglyph and ligature attacks (full-width `Ｉｇｎｏｒｅ` → `ignore`) | `internal/ml/normalizer.go` |
+
+---
+
+<details>
+<summary><strong>⚙️ Configuration</strong></summary>
 
 ### Configuration Priority
 
@@ -292,33 +294,12 @@ When `--health-addr` is set, a separate HTTP listener provides observability end
 | `/readyz` | `GET` | Readiness probe — returns `200 OK` if the server is ready to accept requests |
 | `/stats` | `GET` | Server statistics as JSON (sessions, rate limits, tool calls, `active_connections`, `max_connections`) |
 
----
-
-## Demo Tools
-
-Enable demo tools with the `--demo` flag or by calling `RegisterDemoTools()` in library mode.
-These are safe, read-only tools that do not access the filesystem, network, or any external resources.
-
-| Tool | Risk Level | Required Params | Description |
-|------|-----------|-----------------|-------------|
-| `ping` | 10 | _(none)_ | Returns `"pong"` — health check tool |
-| `system_info` | 30 | _(none)_ | Returns Go version, OS, arch, CPU count, goroutine count, timestamp |
-| `echo` | 20 | `message` (string) | Echoes back the provided message |
-
-**Example — `system_info` response:**
-
-```json
-{
-  "go_version": "go1.22.0",
-  "os": "linux",
-  "arch": "amd64",
-  "cpus": 8,
-  "goroutines": 12,
-  "timestamp": "2026-10-07T14:44:00Z"
-}
-```
+</details>
 
 ---
+
+<details>
+<summary><strong>🔐 RBAC & Policy Engine</strong></summary>
 
 ## RBAC Roles
 
@@ -332,8 +313,6 @@ AegisGate MCP enforces a 4-tier role hierarchy. Roles are ordered: `restricted <
 | `admin` | 3 | All tools, no restrictions | All registered tools |
 
 Role comparison uses `AgentRole.AtLeast()` — a `privileged` agent can access any tool that requires `standard` or `restricted`, but not tools that require `admin`.
-
----
 
 ## Policy Engine
 
@@ -382,8 +361,6 @@ server.AddPolicyRule(mcp.PolicyRule{
 })
 ```
 
----
-
 ## Chain Analysis
 
 The Chain Analyzer tracks sequences of tool calls within a session (rolling window of 20 calls) and flags suspicious patterns:
@@ -396,9 +373,12 @@ The Chain Analyzer tracks sequences of tool calls within a session (rolling wind
 
 When any flag is raised, the chain risk is set to **High** and the event is logged at `WARN` level with the session ID, flags, and call count.
 
+</details>
+
 ---
 
-## Signature Verification
+<details>
+<summary><strong>✍️ Signature Verification</strong></summary>
 
 AegisGate MCP supports ECDSA P-256 message signing to prevent request forgery and tampering.
 Clients sign the canonical JSON of each request (with `Signature` and `KeyID` fields zeroed out)
@@ -434,17 +414,21 @@ The server verifies the signature using `ecdsa.VerifyASN1` against the trusted p
 If no `KeyID` or `Signature` is present, verification is skipped — allowing interoperability
 with unsigned clients while enforcing signatures for clients that provide them.
 
+</details>
+
 ---
+
+<details>
+<summary><strong>🧪 Testing & Performance</strong></summary>
 
 ## Test Coverage
 
 | Category | Tests | Coverage |
 |----------|-------|----------|
-| Unit + integration (non-CGO) | 335 | 92.3% |
-| Unit + integration (CGO + ML) | 333 | 92.1% |
+| Unit + integration (non-CGO) | 337 | 92.3% |
+| Unit + integration (CGO + ML) | 341 | 93.1% |
 | Load / break / soak (build tag: `load`) | 10 | — |
 | Benchmarks | 10 | — |
-| **Total** | **335 / 333** | **92.3%** |
 
 ### Running Tests
 
@@ -453,10 +437,10 @@ with unsigned clients while enforcing signatures for clients that provide them.
 CGO_ENABLED=0 go test ./... -count=1 -timeout 120s
 
 # CGO test suite (full ML, requires libonnxruntime.so)
-CGO_ENABLED=1 CGO_LDFLAGS="-L$(pwd)/lib -lonnxruntime" go test ./... -count=1 -timeout 120s
+CGO_ENABLED=1 CGO_LDFLAGS="-L$(pwd)/lib/amd64 -lonnxruntime" go test ./... -count=1 -timeout 120s
 
 # With race detector (CGO only — -race requires CGO)
-CGO_ENABLED=1 CGO_LDFLAGS="-L$(pwd)/lib -lonnxruntime" go test -race -count=1 -timeout 180s ./...
+CGO_ENABLED=1 CGO_LDFLAGS="-L$(pwd)/lib/amd64 -lonnxruntime" go test -race -count=1 -timeout 180s ./...
 
 # Load/break/soak tests (behind build tag)
 go test -tags=load -count=1 -timeout 120s -v ./...
@@ -481,9 +465,12 @@ Validated via the load test suite (`//go:build load`):
 | Goroutine leaks (10s soak) | 0 | `TestSoakStability` |
 | Graceful shutdown under load | 1.6 ms | `TestShutdownUnderLoad` |
 
+</details>
+
 ---
 
-## Zero Module Dependencies
+<details>
+<summary><strong>📦 Zero Module Dependencies</strong></summary>
 
 AegisGate MCP has **zero external module dependencies**. The `go.mod` file contains
 no `require` directives. All third-party code (ONNX Runtime bindings, Unicode
@@ -492,7 +479,7 @@ normalization, ML model) is vendored into `internal/`, `lib/`, and `models/`.
 ```
 module github.com/aegisgatesecurity/aegisgate-mcp
 
-go 1.22
+go 1.26.6
 
 // Zero external module dependencies (no `require` directives).
 // All third-party code is vendored into internal/ — see NOTICE for details.
@@ -503,11 +490,11 @@ go 1.22
 | Component | License | Location |
 |-----------|---------|----------|
 | onnxruntime_go (Go bindings) | MIT | `internal/onnxruntime_go/` |
-| libonnxruntime.so (Microsoft) | MIT | `lib/` |
+| libonnxruntime.so (Microsoft) | MIT | `lib/amd64/`, `lib/arm64/` |
 | golang.org/x/text (Unicode norm) | BSD-3-Clause | `internal/textnorm/` |
 | CharCNN-BiLSTM v13 model | Apache-2.0 | `models/` |
 
-**Why this matters for OT/ICS:**
+**Why this matters:**
 
 - **Air-gapped deployment** — no `go mod download` needed, no supply chain risk
 - **No transitive dependencies** — nothing to audit beyond vendored code
@@ -515,13 +502,18 @@ go 1.22
 - **Minimal attack surface** — all third-party code is visible and auditable
 - **Fast compilation** — no dependency resolution overhead
 
+</details>
+
 ---
+
+<details>
+<summary><strong>🏗️ Architecture & Protocol</strong></summary>
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                          AegisGate MCP™ Server                          │
+│                          AegisGate MCP Server                           │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  TCP Mode:                                                              │
@@ -569,8 +561,6 @@ go 1.22
 6. **Response Scan** (post-execution) scans tool output for PII, secrets, XSS, prompt injection; redacts if enabled
 7. **Audit Log** records the complete action chain
 
----
-
 ## MCP Protocol Support
 
 AegisGate MCP implements the following JSON-RPC methods:
@@ -583,9 +573,25 @@ AegisGate MCP implements the following JSON-RPC methods:
 | `tools/call` | Request | Executes a tool after passing all security layers |
 | `ping` | Request | Health check — returns empty success response |
 
+</details>
+
 ---
 
-## OT/ICS Use Case
+<details>
+<summary><strong>🏭 Use Cases & Deployment Scenarios</strong></summary>
+
+AegisGate MCP serves any environment where AI agents interact with tools — from cloud
+SaaS platforms to enterprise data pipelines to OT/ICS plant networks. The same 21
+security layers apply regardless of deployment context.
+
+### General Deployments
+
+- **Cloud SaaS** — protect user-facing AI features from prompt injection and data exfiltration
+- **Enterprise data access** — enforce RBAC and audit logging on agent-driven database queries
+- **CI/CD automation** — restrict what AI-assisted pipelines can execute
+- **Air-gapped networks** — zero dependencies means the server runs with no internet access
+
+### OT/ICS Environments
 
 In an OT/ICS environment, AegisGate MCP sits between AI agents and critical infrastructure tools:
 
@@ -594,7 +600,7 @@ AI Agent (Claude, Cursor, custom)
     │
     ▼
 ┌──────────────────┐
-│  AegisGate MCP™  │  ← 21 security layers
+│  AegisGate MCP   │  ← 21 security layers
 │  (TLS/mTLS)      │
 └────────┬─────────┘
          │
@@ -619,6 +625,34 @@ AI Agent (Claude, Cursor, custom)
 - **Audit logging** provides a complete chain of custody for compliance (NERC CIP, IEC 62443)
 - **Air-gapped operation** — zero dependencies means the server can be deployed on isolated networks with no internet access
 
+</details>
+
+---
+
+## Demo Tools
+
+Enable demo tools with the `--demo` flag or by calling `RegisterDemoTools()` in library mode.
+These are safe, read-only tools that do not access the filesystem, network, or any external resources.
+
+| Tool | Risk Level | Required Params | Description |
+|------|-----------|-----------------|-------------|
+| `ping` | 10 | _(none)_ | Returns `"pong"` — health check tool |
+| `system_info` | 30 | _(none)_ | Returns Go version, OS, arch, CPU count, goroutine count, timestamp |
+| `echo` | 20 | `message` (string) | Echoes back the provided message |
+
+**Example — `system_info` response:**
+
+```json
+{
+  "go_version": "go1.26.6",
+  "os": "linux",
+  "arch": "amd64",
+  "cpus": 8,
+  "goroutines": 12,
+  "timestamp": "2026-10-08T08:58:00Z"
+}
+```
+
 ---
 
 ## Documentation
@@ -639,7 +673,7 @@ Detailed documentation is available in the `docs/` directory:
 Licensed under the **Apache License, Version 2.0**.
 
 ```
-Copyright 2024-2026 AegisGate Security™
+Copyright 2024-2026 AegisGate Security, LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -660,9 +694,20 @@ See the [LICENSE](LICENSE) file for the full license text and [NOTICE](NOTICE) f
 
 ## Trademark
 
-**AegisGate™** and **AegisGate MCP™** are trademarks of AegisGate Security, LLC.
-The mark was published for opposition on **October 13, 2026**, with the United States
-Patent and Trademark Office (USPTO). Use of the AegisGate™ mark is governed by the
-Lanham Act (15 U.S.C. § 1126) and applicable state trademark law.
+**AegisGate Security™** is a trademark of AegisGate Security, LLC, filed with the
+United States Patent and Trademark Office (USPTO). The mark was published for
+opposition on October 13, 2026.
 
-> ™ — Trademark of AegisGate Security, LLC. All rights reserved.
+**AegisGate MCP** is an unregistered product name of AegisGate Security, LLC.
+The ™ symbol is not used for this product name, as it has not been separately
+filed as a trademark application. Use of the "AegisGate Security" mark is
+governed by the Lanham Act (15 U.S.C. § 1126) and applicable state trademark
+law.
+
+Permission is granted to use the AegisGate name and marks in connection with
+the unmodified open-source software distribution as published on GitHub. Use
+of the AegisGate name, logo, or other brand assets in derivative works,
+commercial products, service offerings, or marketing materials requires prior
+written permission from AegisGate Security, LLC.
+
+Contact: legal@aegisgatesecurity.io
