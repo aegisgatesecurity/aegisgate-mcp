@@ -776,6 +776,7 @@ Detailed documentation is available in the `docs/` directory:
 | [`docs/model-card.md`](docs/model-card.md) | ML model details: architecture, training data, performance metrics |
 | [`docs/comparison.md`](docs/comparison.md) | Feature comparison: AegisGate MCP vs official MCP SDKs and bolt-on wrappers |
 | [`docs/owasp-mcp-top-10.md`](docs/owasp-mcp-top-10.md) | OWASP MCP Top 10 risk mapping — coverage for all 10 security risks |
+| [`docs/v1.3.0-roadmap.md`](docs/v1.3.0-roadmap.md) | Roadmap for SSE streaming, server-initiated notifications, and resource subscriptions |
 
 ## Changelog
 
