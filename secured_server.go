@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // MCP Security Server — main entry point.
-// Standalone secured MCP server for OT/ICS environments.
+// Standalone secured MCP server with built-in security layers.
 // Zero external Go dependencies. Go standard library only. Air-gapped capable.
 // ML inference (optional, CGO_ENABLED=1) uses vendored onnxruntime_go.
 
@@ -41,6 +41,9 @@ type SecuredMCPServer struct {
 	threatDetector *ml.ThreatDetector
 	// Evasion detector: detects encoding/splitting/obfuscation techniques.
 	evasionDetector *ml.EvasionDetector
+	// ML inference throttle — rate-limits ML detection to prevent
+	// standalone server from being used as high-throughput ML API.
+	mlThrottle *ml.Throttle
 }
 
 // NewSecuredMCPServer creates a new secured MCP server with all security layers.
@@ -138,7 +141,17 @@ func NewSecuredMCPServer(cfg *ServerConfigV2) (*SecuredMCPServer, error) {
 	}
 
 	// Wire ML threat detector to handler for input parameter scanning
+	// ML inference throttle — caps ML detection throughput to prevent
+	// standalone server from being used as org-wide ML API. Graceful
+	// degradation: when throttled, ML is skipped and L1/L2 heuristics
+	// handle detection (same as non-CGO build).
+	var mlThrottle *ml.Throttle
 	if threatDetector != nil {
+		mlThrottle = ml.NewThrottle(ml.ThrottleConfig{
+			MaxPerMinute:   cfg.MLMaxPerMinute,
+			MaxBurstPerSec: cfg.MLMaxBurstPerSec,
+			MaxConcurrent:  cfg.MLMaxConcurrent,
+		})
 		handler.ThreatDetector = threatDetector
 	}
 
@@ -160,6 +173,7 @@ func NewSecuredMCPServer(cfg *ServerConfigV2) (*SecuredMCPServer, error) {
 		policyEngine:    policyEngine,
 		threatDetector:  threatDetector,
 		evasionDetector: evasionDetector,
+		mlThrottle:      mlThrottle,
 	}
 
 	// Wire the handler chain: auth → guardrails → response scan → handler
@@ -345,8 +359,26 @@ func (s *SecuredMCPServer) wrapWithResponseScan(inner HandlerFunc) HandlerFunc {
 		//   Tier 2 (score ≥ 0.50): Block only with L1/L2 corroboration.
 		// In shadow mode, logs predictions but never blocks.
 		if s.threatDetector != nil && s.threatDetector.IsEnabled() {
-			mlResult := s.threatDetector.Detect(scanText)
-			if mlResult.IsThreat {
+			// ML throttle: check if inference is allowed under scale gates.
+			// When throttled, gracefully skip ML (L3) and rely on L1/L2
+			// heuristics — same security posture as non-CGO build.
+			var mlResult *ml.ThreatScore
+			if s.mlThrottle != nil && s.mlThrottle.Allow(time.Now()) {
+				score := s.threatDetector.Detect(scanText)
+				mlResult = &score
+				s.mlThrottle.Release()
+			} else {
+				// ML throttled — log and meter the degradation
+				slog.Warn("ML inference throttled, falling back to L1/L2 heuristics",
+					"layer", "L3", "fallback", "L1+L2")
+				if s.auditLogger != nil {
+					_ = s.auditLogger.Log(context.Background(), &AuditEntry{
+						Type: "ml_throttled",
+					})
+				}
+				// Skip ML — L1/L2 results above already handle detection
+			}
+			if mlResult != nil && mlResult.IsThreat {
 				const l3HighConfidence = 0.95
 				if mlResult.Score >= l3HighConfidence {
 					slog.Warn("ML threat detector blocked response (high confidence)",
@@ -503,6 +535,31 @@ func (s *SecuredMCPServer) Stats() map[string]interface{} {
 		"stdio_checks":       s.stdioGuard.Stats(),
 		"trusted_keys":       s.sigVerifier.TrustedKeyCount(),
 		"policy_rules":       s.policyEngine.RuleCount(),
+		"ml_throttle":        s.mlThrottleStatsMap(),
+	}
+}
+
+// MLThrottleStats returns ML inference throttle statistics, or nil if
+// ML is not enabled. Useful for monitoring and determining when the
+// standalone server's ML capacity is exhausted (upgrade to Platform).
+func (s *SecuredMCPServer) MLThrottleStats() *ml.ThrottleStats {
+	if s.mlThrottle == nil {
+		return nil
+	}
+	stats := s.mlThrottle.Stats()
+	return &stats
+}
+
+// mlThrottleStatsMap returns throttle stats as a map for the Stats() dict.
+func (s *SecuredMCPServer) mlThrottleStatsMap() map[string]interface{} {
+	if s.mlThrottle == nil {
+		return nil
+	}
+	ts := s.mlThrottle.Stats()
+	return map[string]interface{}{
+		"total_allowed":     ts.TotalAllowed,
+		"total_throttled":   ts.TotalThrottled,
+		"current_in_flight": ts.CurrentInFlight,
 	}
 }
 

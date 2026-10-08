@@ -79,6 +79,16 @@ type ServerConfigV2 struct {
 	// the vendored model at ./models/threat_cnn_bilstm.onnx.
 	MLModelPath string
 
+	// ML inference throttle — prevents the standalone server from being
+	// used as a high-throughput ML detection API. When caps are hit, ML
+	// gracefully degrades to L1/L2 heuristics (detection is skipped, not
+	// blocked). This preserves the ML differentiator for single-server use
+	// while making AegisGate Platform the natural upgrade for org-wide ML.
+	// Set MLMaxPerMinute to 0 for unlimited (not recommended).
+	MLMaxPerMinute   int
+	MLMaxBurstPerSec int
+	MLMaxConcurrent  int
+
 	// DemoTools registers three example tools (ping, system_info, echo)
 	// on startup. Useful for testing and demonstration.
 	DemoTools bool
@@ -94,8 +104,8 @@ type ServerConfigV2 struct {
 func DefaultServerConfig() *ServerConfigV2 {
 	return &ServerConfigV2{
 		Address:               ":8081",
-		MaxConnections:        1000,
-		MaxSessions:           50,
+		MaxConnections:        250,
+		MaxSessions:           25,
 		SessionTimeout:        1 * time.Hour,
 		MaxToolsPerSession:    100,
 		ExecTimeout:           30 * time.Second,
@@ -107,6 +117,13 @@ func DefaultServerConfig() *ServerConfigV2 {
 		BlockOnPromptInject:   true,
 		MaxAuditEntries:       10000,
 		EnableStdioValidation: true,
+		// ML throttle defaults — single-server envelope.
+		// These are above normal interactive agent usage but cap
+		// automated/scaled workloads. Upgrade to AegisGate Platform
+		// for unlimited ML threat detection across all AI traffic.
+		MLMaxPerMinute:   100,
+		MLMaxBurstPerSec: 10,
+		MLMaxConcurrent:  4,
 	}
 }
 
