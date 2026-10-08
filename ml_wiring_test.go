@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -25,7 +26,7 @@ func newLoadedDetector(t *testing.T) *ml.ThreatDetector {
 	cfg.Enabled = true
 	cfg.ShadowMode = false
 	cfg.ModelPath = modelPath
-	cfg.ONNXRuntimeLibPath = "lib/libonnxruntime.so"
+	cfg.ONNXRuntimeLibPath = "lib/" + runtime.GOARCH + "/libonnxruntime.so"
 	td := ml.NewThreatDetector(cfg)
 	if err := td.LoadModel(modelPath); err != nil {
 		t.Skipf("could not load model: %v", err)
@@ -161,7 +162,7 @@ func TestMLShadowMode_LogsButDoesNotBlock(t *testing.T) {
 	cfg.Enabled = false   // shadow mode: detection not enabled
 	cfg.ShadowMode = true // shadow mode: logs but doesn't block
 	cfg.ModelPath = modelPath
-	cfg.ONNXRuntimeLibPath = "lib/libonnxruntime.so"
+	cfg.ONNXRuntimeLibPath = "lib/" + runtime.GOARCH + "/libonnxruntime.so"
 	td := ml.NewThreatDetector(cfg)
 	if err := td.LoadModel(modelPath); err != nil {
 		t.Skipf("could not load model: %v", err)
@@ -197,7 +198,7 @@ func TestMLModelLoadFailure_HeuristicFallback(t *testing.T) {
 	cfg := ml.DefaultDetectorConfig()
 	cfg.Enabled = true
 	cfg.ModelPath = "/nonexistent/path/model.onnx"
-	cfg.ONNXRuntimeLibPath = "lib/libonnxruntime.so"
+	cfg.ONNXRuntimeLibPath = "lib/" + runtime.GOARCH + "/libonnxruntime.so"
 
 	td := ml.NewThreatDetector(cfg)
 	if err := td.LoadModel(cfg.ModelPath); err == nil {
@@ -209,9 +210,9 @@ func TestMLModelLoadFailure_HeuristicFallback(t *testing.T) {
 }
 
 // TestSOHashVerification verifies that the .so hash verification works correctly.
-// The vendored libonnxruntime.so must match ExpectedONNXRuntimeHash.
+// The vendored libonnxruntime.so must match ExpectedONNXRuntimeHashes[runtime.GOARCH].
 func TestSOHashVerification(t *testing.T) {
-	soPath := "lib/libonnxruntime.so"
+	soPath := "lib/" + runtime.GOARCH + "/libonnxruntime.so"
 	if _, err := os.Stat(soPath); err != nil {
 		t.Skipf("shared library not found: %s", soPath)
 	}
@@ -225,7 +226,7 @@ func TestSOHashVerification(t *testing.T) {
 // TestSOHashMismatch_RejectsTamperedLibrary verifies that a hash mismatch
 // causes the detector to refuse loading the ONNX runtime.
 func TestSOHashMismatch_RejectsTamperedLibrary(t *testing.T) {
-	soPath := "lib/libonnxruntime.so"
+	soPath := "lib/" + runtime.GOARCH + "/libonnxruntime.so"
 	if _, err := os.Stat(soPath); err != nil {
 		t.Skipf("shared library not found: %s", soPath)
 	}

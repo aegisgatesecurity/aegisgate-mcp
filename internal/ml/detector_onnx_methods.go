@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	onnxruntime "github.com/aegisgatesecurity/aegisgate-mcp/internal/onnxruntime_go"
 )
@@ -75,6 +77,17 @@ func discoverONNXRuntimeLib(configPath string) string {
 	// 4. Repo-local dev/test paths — walk up from CWD to find testlab/
 	cwd, _ := os.Getwd()
 	for dir := cwd; dir != "/" && dir != "."; dir = filepath.Dir(dir) {
+		// 4a. Arch-specific vendored path: lib/{goarch}/libonnxruntime.so
+		archPath := archLibPath(filepath.Join(dir, "lib"), runtime.GOARCH)
+		if _, err := os.Stat(archPath); err == nil {
+			return archPath
+		}
+		// 4b. Legacy flat path: lib/libonnxruntime.so (backward compat)
+		legacyPath := filepath.Join(dir, "lib", "libonnxruntime.so")
+		if _, err := os.Stat(legacyPath); err == nil {
+			return legacyPath
+		}
+		// 4c. testlab paths
 		candidate := filepath.Join(dir, "testlab", "onnxruntime.so")
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate
@@ -95,6 +108,22 @@ func discoverONNXRuntimeLib(configPath string) string {
 	return "" // Let onnxruntime use its default search
 }
 
+// supportedArches returns a comma-separated list of supported GOARCH values.
+func supportedArches() string {
+	arches := make([]string, 0, len(ExpectedONNXRuntimeHashes))
+	for k := range ExpectedONNXRuntimeHashes {
+		arches = append(arches, k)
+	}
+	return strings.Join(arches, ", ")
+}
+
+// archLibPath returns the arch-specific vendored library path relative to
+// a base directory. For example, archLibPath("/build/lib", "amd64") returns
+// "/build/lib/amd64/libonnxruntime.so".
+func archLibPath(base, goarch string) string {
+	return filepath.Join(base, goarch, "libonnxruntime.so")
+}
+
 // loadModelONNX loads the ONNX model and creates an inference session.
 func (td *ThreatDetector) loadModelONNX(path string) error {
 	// Auto-discover onnxruntime shared library if not explicitly configured
@@ -105,9 +134,14 @@ func (td *ThreatDetector) loadModelONNX(path string) error {
 		if err != nil {
 			return fmt.Errorf("compute onnxruntime hash: %w", err)
 		}
-		expectedSOHash := "sha256:" + ExpectedONNXRuntimeHash
+		goarch := runtime.GOARCH
+		expectedHash, ok := ExpectedONNXRuntimeHashes[goarch]
+		if !ok {
+			return fmt.Errorf("no expected ONNX Runtime hash for GOARCH %s — supported: %v", goarch, supportedArches())
+		}
+		expectedSOHash := "sha256:" + expectedHash
 		if soHash != expectedSOHash {
-			return fmt.Errorf("onnxruntime shared library hash mismatch: got %s, expected %s — possible supply-chain tampering", soHash, expectedSOHash)
+			return fmt.Errorf("onnxruntime shared library hash mismatch (GOARCH=%s): got %s, expected %s — possible supply-chain tampering", goarch, soHash, expectedSOHash)
 		}
 		onnxruntime.SetSharedLibraryPath(libPath)
 	}

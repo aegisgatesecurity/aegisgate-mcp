@@ -45,14 +45,17 @@ COPY . .
 # Override: --build-arg CGO_ENABLED=0 for heuristic-only (smaller image).
 ARG CGO_ENABLED=1
 ARG VERSION=1.1.0
+ARG TARGETARCH
 
 # Set up environment for CGO build with vendored onnxruntime.
-# WORKDIR is /build, so the .so is at /build/lib/ and C headers at
-# /build/internal/onnxruntime_go/. We use absolute paths because Dockerfile
-# ENV does not expand $PWD at build time.
+# WORKDIR is /build, so the arch-specific .so is at /build/lib/${TARGETARCH}/
+# and C headers at /build/internal/onnxruntime_go/. We use absolute paths
+# because Dockerfile ENV does not expand $PWD at build time.
 ENV CGO_ENABLED=${CGO_ENABLED}
 ENV CGO_CFLAGS="-I/build/internal/onnxruntime_go"
-ENV CGO_LDFLAGS="-L/build/lib -lonnxruntime -ldl"
+ENV CGO_LDFLAGS="-L/build/lib/${TARGETARCH} -lonnxruntime -ldl"
+ENV ONNXRUNTIME_SHARED_LIBRARY_PATH=/build/lib/${TARGETARCH}/libonnxruntime.so
+ENV LD_LIBRARY_PATH=/build/lib/${TARGETARCH}
 
 # Build the binary.
 # -s -w strips debug info for smaller binary.
@@ -67,6 +70,10 @@ RUN go build \
 # libstdc++6 for ONNX runtime. Much smaller than full debian, no shell by
 # default (we remove it in hardening step below).
 FROM debian:bookworm-slim
+
+# ARG TARGETARCH is needed in this stage to select the correct .so file.
+# Docker Buildx passes this automatically for multi-platform builds.
+ARG TARGETARCH
 
 # Install runtime dependencies and create non-root user.
 # - libstdc++6: required by libonnxruntime.so (C++ runtime)
@@ -85,8 +92,8 @@ RUN mkdir -p /app/models /app/lib /var/log/mcp /tmp/mcp-audit && \
 # Copy binary from build stage
 COPY --from=builder /mcp-server /app/mcp-server
 
-# Copy vendored ONNX runtime shared library
-COPY --from=builder /build/lib/libonnxruntime.so /app/lib/libonnxruntime.so
+# Copy vendored ONNX runtime shared library (arch-specific)
+COPY --from=builder /build/lib/${TARGETARCH}/libonnxruntime.so /app/lib/libonnxruntime.so
 
 # Copy vendored ML model (CharCNN-BiLSTM v13, 6.2MB)
 COPY --from=builder /build/models/threat_cnn_bilstm.onnx /app/models/threat_cnn_bilstm.onnx
