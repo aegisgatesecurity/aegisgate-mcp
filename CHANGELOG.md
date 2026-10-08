@@ -5,6 +5,42 @@ All notable changes to AegisGate MCP are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] — 2026-10-08
+
+### Changed
+
+- **Streamable HTTP transport: implemented `Mcp-Session-Id` support.**
+  The server now generates a cryptographically random session ID on
+  `initialize`, returns it in the `Mcp-Session-Id` response header, and
+  validates it on all subsequent requests. Sessions expire after 30 minutes
+  of inactivity. Clients can terminate a session by sending `DELETE` to the
+  `/mcp` endpoint with the session ID header — per MCP 2025-06-18 spec
+- **Removed fake `resources/subscribe` and `resources/unsubscribe` stubs.**
+  These methods previously returned `{}` (fake success) without implementing
+  any subscription logic. They now return `method not found` (JSON-RPC error
+  code -32601). This aligns with the honest capability advertisements from
+  v1.2.1 — the server only claims what it implements
+- **Rewrote Streamable HTTP transport documentation comments.** Previous
+  comments claimed SSE streaming (`text/event-stream`) support that did not
+  exist. Comments now accurately describe request/response mode only, with
+  SSE streaming noted as a planned v1.3.0 feature
+
+### Added
+
+- `DELETE` method support on `/mcp` endpoint for session termination
+- Session lifecycle management: creation, validation, touch on activity,
+  expiry (30 min idle), and client-initiated termination
+- 8 new tests: session required, invalid session, DELETE session, DELETE
+  without session, session persistence across requests, subscribe returns
+  method not found (HTTP), subscribe/unsubscribe return method not found
+  (JSON-RPC)
+
+### Security
+
+- Session IDs use 256 bits of cryptographic randomness (32 bytes, hex-encoded)
+- Invalid or expired sessions receive `404 Not Found` — no information leak
+- `DELETE` without session header receives `400 Bad Request`
+
 ## [1.2.1] — 2026-10-08
 
 ### Changed

@@ -75,10 +75,6 @@ func (h *RequestHandler) HandleRequest(conn *Connection, req *JSONRPCRequest) *J
 		return h.handleListResources(req)
 	case "resources/read", "resource/read":
 		return h.handleReadResource(ctx, req)
-	case "resources/subscribe":
-		return h.handleSuccess(req.ID, map[string]interface{}{})
-	case "resources/unsubscribe":
-		return h.handleSuccess(req.ID, map[string]interface{}{})
 	case "prompts/list", "prompt/list":
 		return h.handleListPrompts(req)
 	case "prompts/get", "prompt/get":
