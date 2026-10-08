@@ -237,7 +237,10 @@ for f in $FILES; do
     case "$f" in
         *.png|*.jpg|*.jpeg|*.gif|*.webp|*.svg|*.ico) continue ;;
         # Vendored binary artifacts — intentionally committed
-        lib/libonnxruntime.so) continue ;;
+        lib/amd64/libonnxruntime.so) continue ;;
+        lib/arm64/libonnxruntime.so) continue ;;
+        lib/amd64/libonnxruntime.so.1) continue ;;
+        lib/arm64/libonnxruntime.so.1) continue ;;
         models/threat_cnn_bilstm.onnx) continue ;;
     esac
     # Check for large files (>1MB)

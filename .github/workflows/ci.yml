@@ -144,9 +144,9 @@ jobs:
         env:
           CGO_ENABLED: 1
           CGO_CFLAGS: "-I${{ github.workspace }}/internal/onnxruntime_go"
-          CGO_LDFLAGS: "-L${{ github.workspace }}/lib -lonnxruntime -ldl"
-          ONNXRUNTIME_SHARED_LIBRARY_PATH: ${{ github.workspace }}/lib/libonnxruntime.so
-          LD_LIBRARY_PATH: ${{ github.workspace }}/lib
+          CGO_LDFLAGS: "-L${{ github.workspace }}/lib/amd64 -lonnxruntime -ldl"
+          ONNXRUNTIME_SHARED_LIBRARY_PATH: ${{ github.workspace }}/lib/amd64/libonnxruntime.so
+          LD_LIBRARY_PATH: ${{ github.workspace }}/lib/amd64
         run: |
           go test -v -coverprofile=coverage-ml.out -covermode=atomic ./... 2>&1 | tee test-output-ml.txt
       - name: Check coverage ≥ 90%
@@ -196,7 +196,9 @@ jobs:
         env:
           CGO_ENABLED: 1
           CGO_CFLAGS: "-I${{ github.workspace }}/internal/onnxruntime_go"
-          CGO_LDFLAGS: "-L${{ github.workspace }}/lib -lonnxruntime -ldl"
+          CGO_LDFLAGS: "-L${{ github.workspace }}/lib/amd64 -lonnxruntime -ldl"
+          ONNXRUNTIME_SHARED_LIBRARY_PATH: ${{ github.workspace }}/lib/amd64/libonnxruntime.so
+          LD_LIBRARY_PATH: ${{ github.workspace }}/lib/amd64
         run: |
           go build -ldflags="-s -w -X github.com/aegisgatesecurity/aegisgate-mcp.Version=1.1.0" \
             -o mcp-server ./cmd/mcp-server/

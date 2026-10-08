@@ -46,10 +46,12 @@ external network access is required to build or run this software.
 
 2. ONNX Runtime — libonnxruntime.so (MIT License)
    Copyright (c) Microsoft Corporation
-   Source: lib/libonnxruntime.so
-   License: lib/LICENSE
+   Source: lib/amd64/libonnxruntime.so, lib/arm64/libonnxruntime.so
+   License: lib/amd64/LICENSE (same for both arches)
    Purpose: Prebuilt shared library for neural network inference
-   Version: 1.29.0 (Linux x86_64)
+   Version: 1.29.0 (Linux x86_64 and Linux aarch64)
+   SHA-256 (amd64): 5715f06d8992ca8eeeddcce43df3a7d38f97d537052126f558e912cb312460ca
+   SHA-256 (arm64): a27d21126db312aa8f02f3d5eaebe466e991f51f469882e6d0407d5a8b64afda
 
 3. golang.org/x/text — unicode/norm + transform (BSD-3-Clause License)
    Copyright 2009 The Go Authors
