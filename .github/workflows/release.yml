@@ -1,3 +1,11 @@
+# AegisGate MCP - Release Workflow
+# ============================================================================
+# Triggers: tag push (v*) or manual dispatch
+# Jobs: build-lite → build-ml → sbom → build-container → sign-container → release
+# Signing: keyless (Sigstore/Fulcio + Rekor) via GitHub OIDC
+# SBOM: CycloneDX + SPDX via anchore/sbom-action
+# ============================================================================
+
 name: Release
 
 on:
@@ -15,6 +23,7 @@ permissions:
   packages: write
   id-token: write
   actions: read
+  attestations: write
 
 env:
   GO_VERSION: '1.26.6'
@@ -26,23 +35,24 @@ jobs:
   # Build binaries — non-CGO (heuristic-only)
   # ========================================
   build-lite:
+    name: Build Lite (${{ matrix.goarch }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
           - goos: linux
             goarch: amd64
-            suffix: -linux-amd64
+            suffix: linux-amd64
           - goos: linux
             goarch: arm64
-            suffix: -linux-arm64
+            suffix: linux-arm64
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Build
+      - name: Build binary
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
@@ -50,17 +60,29 @@ jobs:
         run: |
           VERSION=${{ github.event.inputs.version || github.ref_name }}
           go build -ldflags "-s -w -X github.com/aegisgatesecurity/aegisgate-mcp.Version=${VERSION}" \
-            -o mcp-server${{ matrix.suffix }} ./cmd/mcp-server/
-      - name: Upload binary
+            -o mcp-server-${{ matrix.suffix }} ./cmd/mcp-server/
+      - name: Generate SHA256 checksum
+        run: |
+          sha256sum mcp-server-${{ matrix.suffix }} > mcp-server-${{ matrix.suffix }}.sha256
+      - name: Set up Cosign
+        uses: sigstore/cosign-installer@v3
+      - name: Sign binary (keyless)
+        run: |
+          cosign sign-blob --yes --bundle mcp-server-${{ matrix.suffix }}.bundle mcp-server-${{ matrix.suffix }}
+      - name: Upload artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: mcp-server-lite-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: mcp-server${{ matrix.suffix }}
+          name: mcp-server-lite-${{ matrix.suffix }}
+          path: |
+            mcp-server-${{ matrix.suffix }}
+            mcp-server-${{ matrix.suffix }}.sha256
+            mcp-server-${{ matrix.suffix }}.bundle
 
   # ========================================
-  # Build binary — CGO (ML-enabled, amd64 only for now)
+  # Build binary — CGO (ML-enabled)
   # ========================================
   build-ml:
+    name: Build ML (${{ matrix.goarch }})
     strategy:
       matrix:
         include:
@@ -72,8 +94,8 @@ jobs:
             suffix: linux-arm64-ml
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -89,16 +111,28 @@ jobs:
           VERSION=${{ github.event.inputs.version || github.ref_name }}
           go build -ldflags "-s -w -X github.com/aegisgatesecurity/aegisgate-mcp.Version=${VERSION}" \
             -o mcp-server-${{ matrix.suffix }} ./cmd/mcp-server/
-      - name: Upload binary
+      - name: Generate SHA256 checksum
+        run: |
+          sha256sum mcp-server-${{ matrix.suffix }} > mcp-server-${{ matrix.suffix }}.sha256
+      - name: Set up Cosign
+        uses: sigstore/cosign-installer@v3
+      - name: Sign binary (keyless)
+        run: |
+          cosign sign-blob --yes --bundle mcp-server-${{ matrix.suffix }}.bundle mcp-server-${{ matrix.suffix }}
+      - name: Upload artifacts
         uses: actions/upload-artifact@v6
         with:
           name: mcp-server-ml-${{ matrix.suffix }}
-          path: mcp-server-${{ matrix.suffix }}
+          path: |
+            mcp-server-${{ matrix.suffix }}
+            mcp-server-${{ matrix.suffix }}.sha256
+            mcp-server-${{ matrix.suffix }}.bundle
 
   # ========================================
   # SBOM — CycloneDX + SPDX
   # ========================================
-  sbom-attest:
+  sbom:
+    name: Generate SBOM
     needs: [build-lite, build-ml]
     runs-on: ubuntu-latest
     permissions:
@@ -106,7 +140,7 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Generate CycloneDX SBOM
         uses: anchore/sbom-action@v0.24.3
         with:
@@ -126,9 +160,10 @@ jobs:
             sbom-spdx.json
 
   # ========================================
-  # Docker build + push
+  # Docker build + push + sign
   # ========================================
   build-container:
+    name: Build & Sign Container
     needs: [build-ml]
     runs-on: ubuntu-latest
     permissions:
@@ -136,8 +171,18 @@ jobs:
       id-token: write
       actions: read
       contents: read
+      attestations: write
+    outputs:
+      image_digest: ${{ steps.docker_build.outputs.digest }}
+      version: ${{ steps.version.outputs.VERSION }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+      - name: Determine version
+        id: version
+        run: |
+          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${VERSION#v}"
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
       - name: Set up QEMU (for cross-platform builds)
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
@@ -150,7 +195,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -158,7 +203,8 @@ jobs:
             type=sha,prefix=
             type=raw,value=latest,enable={{is_default_branch}}
       - name: Build and push (multi-arch)
-        uses: docker/build-push-action@v5
+        id: docker_build
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
@@ -168,23 +214,115 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Set up Cosign
+        uses: sigstore/cosign-installer@v3
+      - name: Sign container image
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          IMAGE_REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
+          echo "Signing image: ${IMAGE_REF}"
+          cosign sign --yes "${IMAGE_REF}"
+      - name: Verify container signature
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          IMAGE_REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
+          cosign verify \
+            --certificate-identity-regexp "https://github.com/.*" \
+            --certificate-oidc-issuer-regexp "https://token.actions.githubusercontent.com" \
+            "${IMAGE_REF}"
+          echo "✅ Container signature verified"
 
   # ========================================
-  # GitHub Release
+  # SBOM Attestation to container image
+  # ========================================
+  sbom-attest:
+    name: SBOM Attestation
+    needs: [build-container]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      attestations: write
+      id-token: write
+    env:
+      COSIGN_EXPERIMENTAL: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Determine version
+        id: version
+        run: |
+          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${VERSION#v}"
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+      - name: Install Syft
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.19.0
+          syft version
+      - name: Generate SBOM (SPDX-JSON)
+        run: |
+          syft dir:. -o spdx-json > sbom.spdx.json 2>/dev/null
+          if [ ! -s sbom.spdx.json ]; then
+            echo "::error::SBOM file is empty or missing"
+            exit 1
+          fi
+          echo "✅ SBOM generated: $(wc -l < sbom.spdx.json) lines"
+          python3 -c "import json; json.load(open('sbom.spdx.json')); print('SBOM JSON valid')"
+      - name: Set up Cosign
+        uses: sigstore/cosign-installer@v3
+      - name: Attest SBOM to image
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          IMAGE_DIGEST: ${{ needs.build-container.outputs.image_digest }}
+        run: |
+          if [ -n "${IMAGE_DIGEST}" ]; then
+            IMAGE_REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${IMAGE_DIGEST}"
+          else
+            IMAGE_REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
+          fi
+          echo "Attesting SBOM to: ${IMAGE_REF}"
+          cosign attest --yes --type spdxjson --predicate sbom.spdx.json "${IMAGE_REF}"
+      - name: Verify SBOM attestation
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          IMAGE_DIGEST: ${{ needs.build-container.outputs.image_digest }}
+        run: |
+          if [ -n "${IMAGE_DIGEST}" ]; then
+            IMAGE_REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${IMAGE_DIGEST}"
+          else
+            IMAGE_REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
+          fi
+          cosign verify-attestation \
+            --type spdxjson \
+            --certificate-identity-regexp "https://github.com/.*" \
+            --certificate-oidc-issuer-regexp "https://token.actions.githubusercontent.com" \
+            "${IMAGE_REF}"
+          echo "✅ SBOM attestation verified"
+
+  # ========================================
+  # GitHub Release — collect all artifacts
   # ========================================
   create-release:
-    needs: [build-lite, build-ml, sbom-attest, build-container]
+    name: Create GitHub Release
+    needs: [build-lite, build-ml, sbom, build-container, sbom-attest]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Download all artifacts
         uses: actions/download-artifact@v7
         with:
           path: release/
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event.inputs.version || github.ref_name }}
           generate_release_notes: true
