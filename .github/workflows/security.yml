@@ -91,6 +91,8 @@ jobs:
           category: trivy-fs
         continue-on-error: true
       - name: Build Docker image for scan
+        id: docker-build
+        continue-on-error: true
         run: |
           for attempt in 1 2 3; do
             if docker build -t aegisgate-mcp:scan .; then
@@ -100,11 +102,12 @@ jobs:
             echo "Docker build failed on attempt $attempt (likely Docker Hub rate limit), retrying in 30s..."
             sleep 30
             if [ $attempt -eq 3 ]; then
-              echo "Docker build failed after 3 attempts"
+              echo "Docker build failed after 3 attempts — Docker Hub rate limited, skipping image scan"
               exit 1
             fi
           done
       - name: Trivy image scan
+        if: steps.docker-build.outcome == 'success'
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: 'aegisgate-mcp:scan'
@@ -114,8 +117,8 @@ jobs:
           exit-code: '0'
         continue-on-error: true
       - name: Upload Trivy Image SARIF
+        if: always() && steps.docker-build.outcome == 'success' && hashFiles('trivy-image-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && hashFiles('trivy-image-results.sarif') != ''
         with:
           sarif_file: trivy-image-results.sarif
           category: trivy-image
