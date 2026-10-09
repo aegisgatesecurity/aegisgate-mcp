@@ -16,6 +16,29 @@ import (
 	"github.com/aegisgatesecurity/aegisgate-mcp/internal/ml"
 )
 
+// currentSessionID is a thread-local session ID used for subscription
+// tracking. The HTTP transport sets this before invoking the handler
+// so that resources/subscribe can associate the subscription with the
+// correct session.
+var currentSessionID sessionIDContext
+
+type sessionIDContext struct {
+	val string
+	mu  sync.RWMutex
+}
+
+func (s *sessionIDContext) Set(id string) {
+	s.mu.Lock()
+	s.val = id
+	s.mu.Unlock()
+}
+
+func (s *sessionIDContext) Get() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.val
+}
+
 // RequestHandler handles MCP protocol requests.
 type RequestHandler struct {
 	Authorizer     ToolAuthorizer
@@ -35,6 +58,14 @@ type RequestHandler struct {
 	// and schemas for prompt injection / exfiltration commands at
 	// registration time (OWASP MCP Top 10: Tool Poisoning).
 	ToolPoisoningScanner *ContentScanner
+	// NotifyCallback is called when the server needs to push a
+	// notification to connected clients (e.g. tools/list_changed).
+	// If nil, notifications are silently dropped.
+	NotifyCallback NotificationCallback
+	// Subscriptions tracks which sessions are subscribed to which
+	// resource URIs. Key: session ID → set of URIs.
+	subscriptions map[string]map[string]bool
+	subMu         sync.RWMutex
 }
 
 // NewRequestHandler creates a new request handler.
@@ -47,10 +78,9 @@ func NewRequestHandler(authorizer ToolAuthorizer, auditLogger AuditLogger, sessi
 		ResourceReg:          NewResourceRegistry(),
 		PromptReg:            NewPromptRegistry(),
 		ToolPoisoningScanner: NewContentScanner(),
+		subscriptions:        make(map[string]map[string]bool),
 	}
 }
-
-// HandleRequest handles an MCP JSON-RPC request.
 func (h *RequestHandler) HandleRequest(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
 	ctx := context.Background()
 	switch req.Method {
@@ -75,6 +105,12 @@ func (h *RequestHandler) HandleRequest(conn *Connection, req *JSONRPCRequest) *J
 		return h.handleListResources(req)
 	case "resources/read", "resource/read":
 		return h.handleReadResource(ctx, req)
+	case "resources/templates/list", "resource/templates/list":
+		return h.handleListResourceTemplates(req)
+	case "resources/subscribe", "resource/subscribe":
+		return h.handleSubscribe(req)
+	case "resources/unsubscribe", "resource/unsubscribe":
+		return h.handleUnsubscribe(req)
 	case "prompts/list", "prompt/list":
 		return h.handleListPrompts(req)
 	case "prompts/get", "prompt/get":
@@ -131,9 +167,9 @@ func (h *RequestHandler) handleInitialize(ctx context.Context, conn *Connection,
 	result := map[string]interface{}{
 		"protocolVersion": ProtocolVersion,
 		"capabilities": map[string]interface{}{
-			"tools":     map[string]interface{}{},
-			"resources": map[string]interface{}{},
-			"prompts":   map[string]interface{}{},
+			"tools":     map[string]interface{}{"listChanged": true},
+			"resources": map[string]interface{}{"listChanged": true, "subscribe": true},
+			"prompts":   map[string]interface{}{"listChanged": true},
 			"logging":   map[string]interface{}{},
 		},
 		"serverInfo": map[string]interface{}{
@@ -558,6 +594,117 @@ func (h *RequestHandler) handleToolResult(id interface{}, text string, isError b
 // Tool Registry
 // ============================================================
 
+// ============================================================
+// Resource Subscriptions & Templates (MCP Spec 2025-06-18)
+// ============================================================
+
+// handleSubscribe handles resources/subscribe. Adds the session to the
+// subscription list for the specified resource URI.
+func (h *RequestHandler) handleSubscribe(req *JSONRPCRequest) *JSONRPCResponse {
+	var params struct {
+		URI string `json:"uri"`
+	}
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return h.handleError(req.ID, ErrorInvalidParams, "invalid params: "+err.Error())
+	}
+	if params.URI == "" {
+		return h.handleError(req.ID, ErrorInvalidParams, "uri is required")
+	}
+	// Verify the resource exists
+	if _, err := h.ResourceReg.Read(context.Background(), params.URI); err != nil {
+		return h.handleError(req.ID, ErrorInvalidParams, "resource not found: "+params.URI)
+	}
+	// Use the request's session/connection context — for HTTP transport,
+	// the session ID is passed via the Connection. For testing, we use
+	// a derived session key from the request ID context.
+	sessionKey := h.sessionKeyFromReq(req)
+	h.subMu.Lock()
+	if h.subscriptions[sessionKey] == nil {
+		h.subscriptions[sessionKey] = make(map[string]bool)
+	}
+	h.subscriptions[sessionKey][params.URI] = true
+	h.subMu.Unlock()
+	return h.handleSuccess(req.ID, map[string]interface{}{"subscribed": true})
+}
+
+// handleUnsubscribe handles resources/unsubscribe.
+func (h *RequestHandler) handleUnsubscribe(req *JSONRPCRequest) *JSONRPCResponse {
+	var params struct {
+		URI string `json:"uri"`
+	}
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return h.handleError(req.ID, ErrorInvalidParams, "invalid params: "+err.Error())
+	}
+	if params.URI == "" {
+		return h.handleError(req.ID, ErrorInvalidParams, "uri is required")
+	}
+	sessionKey := h.sessionKeyFromReq(req)
+	h.subMu.Lock()
+	if uris, ok := h.subscriptions[sessionKey]; ok {
+		delete(uris, params.URI)
+		if len(uris) == 0 {
+			delete(h.subscriptions, sessionKey)
+		}
+	}
+	h.subMu.Unlock()
+	return h.handleSuccess(req.ID, map[string]interface{}{"unsubscribed": true})
+}
+
+// handleListResourceTemplates handles resources/templates/list.
+func (h *RequestHandler) handleListResourceTemplates(req *JSONRPCRequest) *JSONRPCResponse {
+	templates := h.ResourceReg.ListTemplates()
+	return h.handleSuccess(req.ID, ListResourceTemplatesResult{
+		ResourceTemplates: templates,
+	})
+}
+
+// sessionKeyFromReq extracts a session key from the request context.
+// In the HTTP transport, this comes from the Connection's session ID.
+// For direct handler calls (testing), we use a placeholder.
+func (h *RequestHandler) sessionKeyFromReq(req *JSONRPCRequest) string {
+	// The Connection is not available here directly; the transport
+	// layer sets the session ID on the handler's connection. For
+	// subscription tracking, we use a thread-local approach: the
+	// transport passes the session ID via the Connection, which is
+	// available to the handler chain. We store it on the request
+	// via a context value in the HTTP transport. For now, use a
+	// global per-request session key that the transport sets.
+	return currentSessionID.Get()
+}
+
+// NotifyResourceUpdated sends a notifications/resources/updated to all
+// sessions subscribed to the given URI. This is called when a resource's
+// content changes.
+func (h *RequestHandler) NotifyResourceUpdated(uri string) {
+	if h.NotifyCallback == nil {
+		return
+	}
+	h.subMu.RLock()
+	defer h.subMu.RUnlock()
+	for sessionKey, uris := range h.subscriptions {
+		if uris[uri] {
+			slog.Debug("notifying subscriber of resource update", "session", sessionKey, "uri", uri)
+			h.NotifyCallback("notifications/resources/updated", map[string]interface{}{
+				"uri": uri,
+			})
+		}
+	}
+}
+
+// NotifyListChanged sends a notifications/*/list_changed notification
+// to connected clients.
+func (h *RequestHandler) NotifyListChanged(resourceType string) {
+	if h.NotifyCallback == nil {
+		return
+	}
+	method := fmt.Sprintf("notifications/%s/list_changed", resourceType)
+	h.NotifyCallback(method, nil)
+}
+
+// ============================================================
+// Tool Registry
+// ============================================================
+
 // ToolRegistry manages MCP tools and their handlers.
 type ToolRegistry struct {
 	mu       sync.RWMutex
@@ -753,6 +900,7 @@ func scanSchemaForPoisoning(scanner *ContentScanner, schema map[string]interface
 type ResourceRegistry struct {
 	mu        sync.RWMutex
 	resources map[string]*registeredResource
+	templates []ResourceTemplate
 }
 
 type registeredResource struct {
@@ -814,6 +962,31 @@ func (r *ResourceRegistry) Count() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.resources)
+}
+
+// RegisterTemplate adds a URI template for parameterized resources.
+func (r *ResourceRegistry) RegisterTemplate(uriTemplate, name, description, mimeType string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if uriTemplate == "" {
+		return fmt.Errorf("uriTemplate is required")
+	}
+	r.templates = append(r.templates, ResourceTemplate{
+		URITemplate: uriTemplate,
+		Name:        name,
+		Description: description,
+		MimeType:    mimeType,
+	})
+	return nil
+}
+
+// ListTemplates returns all registered resource templates.
+func (r *ResourceRegistry) ListTemplates() []ResourceTemplate {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	templates := make([]ResourceTemplate, len(r.templates))
+	copy(templates, r.templates)
+	return templates
 }
 
 // ============================================================

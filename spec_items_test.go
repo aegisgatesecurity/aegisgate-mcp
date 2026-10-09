@@ -46,33 +46,60 @@ func TestResourcesRead(t *testing.T) {
 
 func TestResourcesSubscribe(t *testing.T) {
 	handler := NewRequestHandler(nil, nil, nil)
-	req := &JSONRPCRequest{JSONRPC: JSONRPCVersion, Method: "resources/subscribe", ID: 1}
-	resp := handler.HandleRequest(&Connection{ID: "c1", Session: &Session{ID: "c1"}}, req)
-	// v1.2.2: resources/subscribe is not implemented — should return method not found
+	// Register a resource so subscribe can find it
+	handler.ResourceReg.Register("test://resource", "test", "test resource", "text/plain",
+		func(ctx context.Context, uri string) (*ResourceContent, error) {
+			return &ResourceContent{URI: uri, Text: "test"}, nil
+		})
+	currentSessionID.Set("test-session")
+	defer func() { currentSessionID.Set("") }()
+
+	req := &JSONRPCRequest{
+		JSONRPC: JSONRPCVersion,
+		Method:  "resources/subscribe",
+		Params:  json.RawMessage(`{"uri":"test://resource"}`),
+		ID:      1,
+	}
+	resp := handler.HandleRequest(&Connection{ID: "c1", Session: &Session{ID: "test-session"}}, req)
 	if resp == nil {
 		t.Fatal("expected non-nil response")
 	}
-	if resp.Error == nil {
-		t.Fatal("expected error for unimplemented resources/subscribe, got nil")
-	}
-	if resp.Error.Code != ErrorMethodNotFound {
-		t.Errorf("error code = %d, want %d (method not found)", resp.Error.Code, ErrorMethodNotFound)
+	if resp.Error != nil {
+		t.Fatalf("expected success, got error: %v", resp.Error)
 	}
 }
 
 func TestResourcesUnsubscribe(t *testing.T) {
 	handler := NewRequestHandler(nil, nil, nil)
-	req := &JSONRPCRequest{JSONRPC: JSONRPCVersion, Method: "resources/unsubscribe", ID: 1}
-	resp := handler.HandleRequest(&Connection{ID: "c1", Session: &Session{ID: "c1"}}, req)
-	// v1.2.2: resources/unsubscribe is not implemented — should return method not found
+	handler.ResourceReg.Register("test://resource", "test", "test resource", "text/plain",
+		func(ctx context.Context, uri string) (*ResourceContent, error) {
+			return &ResourceContent{URI: uri, Text: "test"}, nil
+		})
+	currentSessionID.Set("test-session")
+	defer func() { currentSessionID.Set("") }()
+
+	// First subscribe
+	subReq := &JSONRPCRequest{
+		JSONRPC: JSONRPCVersion,
+		Method:  "resources/subscribe",
+		Params:  json.RawMessage(`{"uri":"test://resource"}`),
+		ID:      1,
+	}
+	handler.HandleRequest(&Connection{ID: "c1", Session: &Session{ID: "test-session"}}, subReq)
+
+	// Then unsubscribe
+	unsubReq := &JSONRPCRequest{
+		JSONRPC: JSONRPCVersion,
+		Method:  "resources/unsubscribe",
+		Params:  json.RawMessage(`{"uri":"test://resource"}`),
+		ID:      2,
+	}
+	resp := handler.HandleRequest(&Connection{ID: "c1", Session: &Session{ID: "test-session"}}, unsubReq)
 	if resp == nil {
 		t.Fatal("expected non-nil response")
 	}
-	if resp.Error == nil {
-		t.Fatal("expected error for unimplemented resources/unsubscribe, got nil")
-	}
-	if resp.Error.Code != ErrorMethodNotFound {
-		t.Errorf("error code = %d, want %d (method not found)", resp.Error.Code, ErrorMethodNotFound)
+	if resp.Error != nil {
+		t.Fatalf("expected success, got error: %v", resp.Error)
 	}
 }
 

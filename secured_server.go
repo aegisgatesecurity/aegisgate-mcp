@@ -478,7 +478,41 @@ func (s *SecuredMCPServer) RegisterPrompt(name, description string, args []Promp
 	return s.handler.PromptReg.Register(name, description, args, handler)
 }
 
-// ScanToolForPoisoning checks a tool's description and inputSchema for
+// RegisterResourceTemplate registers a URI template for parameterized resources.
+func (s *SecuredMCPServer) RegisterResourceTemplate(uriTemplate, name, description, mimeType string) error {
+	return s.handler.ResourceReg.RegisterTemplate(uriTemplate, name, description, mimeType)
+}
+
+// NotifyToolsListChanged sends a notifications/tools/list_changed to
+// connected clients. Call this after dynamically adding or removing tools.
+func (s *SecuredMCPServer) NotifyToolsListChanged() {
+	s.handler.NotifyListChanged("tools")
+}
+
+// NotifyResourcesListChanged sends a notifications/resources/list_changed.
+func (s *SecuredMCPServer) NotifyResourcesListChanged() {
+	s.handler.NotifyListChanged("resources")
+}
+
+// NotifyPromptsListChanged sends a notifications/prompts/list_changed.
+func (s *SecuredMCPServer) NotifyPromptsListChanged() {
+	s.handler.NotifyListChanged("prompts")
+}
+
+// NotifyResourceUpdated sends a notifications/resources/updated to all
+// sessions subscribed to the given URI. Call this when a resource's
+// content changes.
+func (s *SecuredMCPServer) NotifyResourceUpdated(uri string) {
+	s.handler.NotifyResourceUpdated(uri)
+}
+
+// SetNotifyCallback sets the notification delivery callback. The transport
+// layer calls this to wire server-initiated notifications to active SSE
+// connections.
+func (s *SecuredMCPServer) SetNotifyCallback(cb NotificationCallback) {
+	s.handler.NotifyCallback = cb
+}
+
 // prompt injection or exfiltration patterns. Returns a *ToolPoisoningError
 // if suspicious patterns are found, nil otherwise.
 func (s *SecuredMCPServer) ScanToolForPoisoning(name, desc string, inputSchema map[string]interface{}) *ToolPoisoningError {

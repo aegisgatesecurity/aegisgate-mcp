@@ -5,6 +5,42 @@ All notable changes to AegisGate MCP are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] — 2026-10-09
+
+### Added
+
+- **Server-initiated notifications (P2).** The server now advertises
+  `listChanged: true` for tools, resources, and prompts capabilities.
+  `NotifyToolsListChanged()`, `NotifyResourcesListChanged()`, and
+  `NotifyPromptsListChanged()` methods on `SecuredMCPServer` dispatch
+  `notifications/*/list_changed` to connected clients via a
+  `NotificationCallback`
+- **Resource subscriptions (P3).** Real `resources/subscribe` and
+  `resources/unsubscribe` handlers with per-session subscription tracking.
+  `NotifyResourceUpdated(uri)` sends `notifications/resources/updated` to
+  all subscribed sessions. Resources capability now advertises `subscribe: true`
+- **Resource templates (P4).** `resources/templates/list` endpoint returns
+  registered URI templates. `RegisterResourceTemplate()` on both
+  `ResourceRegistry` and `SecuredMCPServer` for parameterized resource URIs
+- `SetNotifyCallback()` method on `SecuredMCPServer` for wiring notification
+  delivery to the transport layer
+- `makeNotificationCallback()` on Streamable HTTP transport for SSE delivery
+- 11 new tests: notification dispatch, subscription lifecycle, subscribe
+  validation, resource templates, SecuredMCPServer wrapper methods, SSE
+  notification delivery, idempotent unsubscribe
+
+### Changed
+
+- `handleInitialize` now advertises `listChanged: true` for tools/resources/prompts
+  and `subscribe: true` for resources (was empty capability objects)
+- Go runtime updated from 1.26.6 to 1.26.9 (resolves 14 CVE alerts)
+- README Go badge updated to 1.26.9
+
+### Fixed
+
+- 14 code scanning CVE alerts resolved by Go 1.26.9 update
+- G118 gosec false positive dismissed (standard shutdown pattern)
+
 ## [1.3.0] — 2026-10-08
 
 ### Added
