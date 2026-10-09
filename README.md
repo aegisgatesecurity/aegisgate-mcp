@@ -10,7 +10,7 @@
 Apache 2.0 · 22 security layers · 30 regex patterns + CharCNN-BiLSTM (v13) ML detection · Zero CVEs · Zero external module dependencies
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Go](https://img.shields.io/badge/Go-1.26.6-00ADD8?logo=go)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.26.9-00ADD8?logo=go)](https://golang.org/)
 [![Version](https://img.shields.io/badge/Version-1.3.0-blue.svg)](#changelog)
 [![Coverage](https://img.shields.io/badge/Coverage-91.3%25-brightgreen.svg)](#test-coverage)
 [![Dependencies](https://img.shields.io/badge/Dependencies-Zero-success.svg)](#overview)
@@ -577,7 +577,7 @@ normalization, ML model) is vendored into `internal/`, `lib/`, and `models/`.
 ```
 module github.com/aegisgatesecurity/aegisgate-mcp
 
-go 1.26.6
+go 1.26.9
 
 // Zero external module dependencies (no `require` directives).
 // All third-party code is vendored into internal/ — see NOTICE for details.
@@ -753,7 +753,7 @@ These are safe, read-only tools that do not access the filesystem, network, or a
 
 ```json
 {
-  "go_version": "go1.26.6",
+  "go_version": "go1.26.9",
   "os": "linux",
   "arch": "amd64",
   "cpus": 8,
