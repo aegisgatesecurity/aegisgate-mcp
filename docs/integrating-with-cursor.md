@@ -2,7 +2,7 @@
 
 > **AegisGate MCP** is a product of AegisGate Security, LLC.
 >
-> **License:** Apache-2.0 &nbsp;|&nbsp; **Version:** 1.3.0 &nbsp;|&nbsp; **Go:** 1.26+ &nbsp;|&nbsp; **Dependencies:** Zero external runtime dependencies
+> **License:** Apache-2.0 &nbsp;|&nbsp; **Version:** 1.4.0 &nbsp;|&nbsp; **Go:** 1.26+ &nbsp;|&nbsp; **Dependencies:** Zero external runtime dependencies
 
 Cursor supports MCP servers via Streamable HTTP transport. AegisGate MCP provides a full Streamable HTTP implementation with SSE streaming support and Mcp-Session-Id session management (MCP protocol 2025-06-18).
 
@@ -125,9 +125,9 @@ If Cursor doesn't request SSE, the server falls back to standard `application/js
 If you prefer to run AegisGate MCP in a container:
 
 ```bash
-docker pull ghcr.io/aegisgatesecurity/aegisgate-mcp:1.3.0
+docker pull ghcr.io/aegisgatesecurity/aegisgate-mcp:1.4.0
 docker run -d --name aegisgate-mcp -p 8081:8081 \
-  ghcr.io/aegisgatesecurity/aegisgate-mcp:1.3.0 \
+  ghcr.io/aegisgatesecurity/aegisgate-mcp:1.4.0 \
   --transport http --demo --addr :8081
 ```
 

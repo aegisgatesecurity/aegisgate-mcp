@@ -23,7 +23,7 @@ Apache 2.0 · 22 security layers · 30 regex patterns + CharCNN-BiLSTM (v13) ML 
 
 [Quick Start](#quick-start) · [Security Layers](#security-layers) · [RBAC](#rbac-roles) · [Architecture](#architecture) · [Protocol](#mcp-protocol-support) · [Docs](#documentation) · [Releases](https://github.com/aegisgatesecurity/aegisgate-mcp/releases)
 
-[![GitHub stars](https://img.shields.io/github/stars/aegisgatesecurity/aegisgate-mcp?style=social)](https://github.com/aegisgatesecurity/aegisgate-mcp) — **If AegisGate MCP helps you secure your AI agents, please consider ⭐ starring this repo. It helps others discover it.**
+[![GitHub stars](https://img.shields.io/github/stars/aegisgatesecurity/aegisgate-mcp?style=flat&label=Stars)](https://github.com/aegisgatesecurity/aegisgate-mcp) — **If AegisGate MCP helps you secure your AI agents, please consider ⭐ starring this repo. It helps others discover it.**
 
 </div>
 
@@ -786,7 +786,7 @@ Detailed documentation is available in the `docs/` directory:
 | [`docs/model-card.md`](docs/model-card.md) | ML model details: architecture, training data, performance metrics |
 | [`docs/comparison.md`](docs/comparison.md) | Feature comparison: AegisGate MCP vs official MCP SDKs and bolt-on wrappers |
 | [`docs/owasp-mcp-top-10.md`](docs/owasp-mcp-top-10.md) | OWASP MCP Top 10 risk mapping — coverage for all 10 security risks |
-| [`docs/v1.3.0-roadmap.md`](docs/v1.3.0-roadmap.md) | Roadmap for SSE streaming, server-initiated notifications, and resource subscriptions |
+| [`docs/v1.3.0-roadmap.md`](docs/v1.3.0-roadmap.md) | Roadmap for SSE streaming, server-initiated notifications, resource subscriptions, and resource templates (P1–P4 complete) |
 
 ## Changelog
 
