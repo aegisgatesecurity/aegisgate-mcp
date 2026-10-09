@@ -73,7 +73,7 @@ server's internal state.
 
 AegisGate MCP is built from the ground up as a security-first framework:
 
-- **21 security layers** integrated into the request pipeline — not bolted on
+- **22 security layers** integrated into the request pipeline — not bolted on
 - **Zero external dependencies** — no `require` directives in go.mod, all
   third-party code vendored into `internal/`
 - **ML threat detection** — CharCNN-BiLSTM v13 neural model with <1ms CPU

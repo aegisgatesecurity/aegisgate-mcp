@@ -774,6 +774,8 @@ Detailed documentation is available in the `docs/` directory:
 | [`docs/deployment-guide.md`](docs/deployment-guide.md) | Production deployment: Docker, TLS, air-gapped setups |
 | [`docs/admin-guide.md`](docs/admin-guide.md) | Administration: sessions, audit logs, RBAC management, policies |
 | [`docs/how-to-guides.md`](docs/how-to-guides.md) | Task-specific guides: custom tools, signature verification, mTLS setup |
+| [`docs/building-your-first-server.md`](docs/building-your-first-server.md) | Tutorial: build a complete secure MCP server from scratch with custom tools, RBAC, and policies |
+| [`docs/integrating-with-cursor.md`](docs/integrating-with-cursor.md) | Connect Cursor to AegisGate MCP via Streamable HTTP transport |
 | [`docs/model-card.md`](docs/model-card.md) | ML model details: architecture, training data, performance metrics |
 | [`docs/comparison.md`](docs/comparison.md) | Feature comparison: AegisGate MCP vs official MCP SDKs and bolt-on wrappers |
 | [`docs/owasp-mcp-top-10.md`](docs/owasp-mcp-top-10.md) | OWASP MCP Top 10 risk mapping — coverage for all 10 security risks |

@@ -2,7 +2,7 @@
 
 > **AegisGate MCP** is a product of AegisGate Security, LLC.
 >
-> **License:** Apache-2.0 &nbsp;|&nbsp; **Version:** 1.1.0 &nbsp;|&nbsp; **Go:** 1.26+ &nbsp;|&nbsp; **Dependencies:** Zero external runtime dependencies
+> **License:** Apache-2.0 &nbsp;|&nbsp; **Version:** 1.3.0 &nbsp;|&nbsp; **Go:** 1.26+ &nbsp;|&nbsp; **Dependencies:** Zero external runtime dependencies
 
 AegisGate MCP is a security-first Model Context Protocol (MCP) server designed for secure AI agent tool use across any environment. It provides tool execution, role-based access control (RBAC), policy enforcement, audit logging, and neural threat detection out of the box — all in a single Go binary with zero external module dependencies.
 
@@ -125,7 +125,7 @@ echo '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-1
     "protocolVersion": "2024-11-05",
     "serverInfo": {
       "name": "aegisgate-mcp",
-      "version": "1.1.0"
+      "version": "1.3.0"
     },
     "capabilities": {
       "tools": {}
@@ -138,7 +138,7 @@ echo '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-1
 The key fields to confirm:
 
 - `serverInfo.name` is `"aegisgate-mcp"`
-- `serverInfo.version` is `"1.1.0"`
+- `serverInfo.version` is `"1.3.0"`
 - `protocolVersion` matches the value you sent
 
 ### 3. List Available Tools
@@ -289,6 +289,8 @@ In this mode the server:
 - **Writes** responses to `stdout`
 - Sends diagnostics and logs to `stderr` (so they don't interfere with the protocol stream)
 
+> **Note:** For HTTP-based integrations, AegisGate supports Streamable HTTP transport with SSE (Server-Sent Events) streaming. The server assigns a session via the `Mcp-Session-Id` response header on `initialize`; clients must send this header with each subsequent request to maintain the session.
+
 ### Claude Desktop Configuration
 
 Add the following to your Claude Desktop config file (`claude_desktop_config.json`):
@@ -407,11 +409,13 @@ curl http://127.0.0.1:8082/stats
 | Flag | Description | Default |
 |---|---|---|
 | `--demo` | Start with 3 built-in demo tools and no auth | `false` |
-| `--transport` | Transport mode: `tcp` or `stdio` | `tcp` |
+| `--transport` | Transport mode: `tcp`, `stdio`, or `http` (Streamable HTTP) | `tcp` |
 | `--addr` | TCP listen address | `:8081` |
 | `--max-connections` | Max concurrent TCP connections (-1 = unlimited) | `1000` |
 | `--token` | Bearer token for authentication *(optional)* | none |
 | `--health-addr` | HTTP health-check listener address *(optional)* | none |
+
+> **Note:** AegisGate also supports Streamable HTTP transport with SSE (Server-Sent Events) streaming for HTTP-based clients. When using Streamable HTTP, the server issues an `Mcp-Session-Id` header on the initial `initialize` request; clients must include this header in subsequent requests for proper session management. SSE streaming allows the server to push notifications and responses asynchronously over a persistent connection.
 
 ---
 
