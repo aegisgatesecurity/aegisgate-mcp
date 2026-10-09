@@ -61,6 +61,7 @@ type streamableHTTPTransport struct {
 
 // sseConn wraps an active SSE connection for notification delivery.
 type sseConn struct {
+	mu       sync.Mutex // serializes writes to w (ResponseWriter is not concurrency-safe)
 	w        http.ResponseWriter
 	flusher  http.Flusher
 	canFlush bool
@@ -90,8 +91,14 @@ func newStreamableHTTPTransport(addr string, handler HandlerFunc) *streamableHTT
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      60 * time.Second,
-		IdleTimeout:       5 * time.Minute,
+		// WriteTimeout is 0 (disabled) because long-lived SSE connections
+		// must stay open indefinitely for server-initiated notifications.
+		// A finite WriteTimeout would kill SSE streams after that duration,
+		// breaking push notification delivery. Connection-level protection
+		// is provided by ReadHeaderTimeout (slowloris), ReadTimeout (body),
+		// IdleTimeout (keepalive), and handler context cancellation.
+		WriteTimeout: 0,
+		IdleTimeout:  5 * time.Minute,
 	}
 	return t
 }
@@ -432,14 +439,17 @@ func (t *streamableHTTPTransport) broadcastNotification(method string, params in
 	defer t.sseConnMu.RUnlock()
 
 	for sessionID, conn := range t.sseConns {
+		conn.mu.Lock()
 		_, err := fmt.Fprintf(conn.w, "data: %s\n\n", data)
 		if err != nil {
 			slog.Debug("failed to write notification to SSE connection", "session_id", sessionID, "error", err)
+			conn.mu.Unlock()
 			continue
 		}
 		if conn.canFlush {
 			conn.flusher.Flush()
 		}
+		conn.mu.Unlock()
 		slog.Debug("delivered notification via SSE", "session_id", sessionID, "method", method)
 	}
 }

@@ -7,11 +7,11 @@
     "url": "https://github.com/aegisgatesecurity/aegisgate-mcp",
     "source": "github"
   },
-  "version": "1.4.1",
+  "version": "1.4.2",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/aegisgatesecurity/aegisgate-mcp:1.4.1",
+      "identifier": "ghcr.io/aegisgatesecurity/aegisgate-mcp:1.4.2",
       "transport": {
         "type": "streamable-http",
         "url": "http://0.0.0.0:8081/mcp"

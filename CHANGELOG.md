@@ -5,6 +5,58 @@ All notable changes to AegisGate MCP are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] — 2026-10-09
+
+### Fixed
+
+- **SSE connections killed after 60 seconds.** The HTTP server's
+  `WriteTimeout` was 60s, which silently terminated long-lived SSE
+  connections after one minute — breaking server-initiated notification
+  delivery for any client connected longer than 60s. Fixed by setting
+  `WriteTimeout: 0` (disabled). Connection-level protection is still
+  provided by `ReadHeaderTimeout` (slowloris), `ReadTimeout` (body),
+  `IdleTimeout` (keepalive), and handler context cancellation
+- **Signature verification missing from HTTP and stdio transports.**
+  The handler chain in `ServeWithOptions()` for the `http` and `stdio`
+  cases was missing `wrapWithSignatureVerification`, meaning the ECDSA
+  P-256 signature verification layer only worked on TCP transport. Now
+  all three transports (TCP, HTTP, stdio) include the full security
+  chain: auth → signature verification → guardrails → response scan →
+  handler
+- **Concurrent SSE writes race condition.** `broadcastNotification()`
+  wrote to `http.ResponseWriter` instances without per-connection
+  synchronization. Concurrent notifications (e.g., tools/list_changed
+  and resources/updated fired simultaneously) could race on the same
+  ResponseWriter. Fixed by adding a `sync.Mutex` to the `sseConn` struct
+  to serialize writes
+
+### Changed
+
+- **Removed dead `evasionDetector` field.** `EvasionDetector` was
+  instantiated and stored on `SecuredMCPServer` but never wired into
+  the detection pipeline. Removed to avoid implying a capability that
+  doesn't exist. The `ml.EvasionDetector` type remains available for
+  future integration (v1.5.0+)
+
+### Documentation
+
+- `SECURITY.md`: corrected "21 security layers" → "22 security layers"
+  (was missed during v1.4.1), corrected "HMAC-SHA256" → "ECDSA P-256"
+  (matching actual code), removed "Heuristic evasion detection" row
+  (code was never wired)
+- `README.md`: corrected test count (480 → 429) and coverage numbers
+  (90.1% → 90.8% non-CGO, 90.9% → 91.4% CGO)
+- `docs/v1.3.0-roadmap.md`: corrected test count (423 → 429) and
+  coverage (90.9% → 91.4%)
+
+### Tests
+
+- Added `TestBroadcastNotificationConcurrent` — 10 concurrent
+  notification goroutines writing to a single SSE connection (run with
+  `-race` to verify mutex correctness)
+- Added `TestSSEServerWriteTimeoutZero` — regression test ensuring
+  `WriteTimeout` stays at 0 for long-lived SSE support
+
 ## [1.4.1] — 2026-10-09
 
 ### Fixed

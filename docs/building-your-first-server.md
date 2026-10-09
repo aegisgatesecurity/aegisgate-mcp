@@ -2,7 +2,7 @@
 
 > **AegisGate MCP** is a product of AegisGate Security, LLC.
 >
-> **License:** Apache-2.0 &nbsp;|&nbsp; **Version:** 1.4.1 &nbsp;|&nbsp; **Go:** 1.26+ &nbsp;|&nbsp; **Dependencies:** Zero external runtime dependencies
+> **License:** Apache-2.0 &nbsp;|&nbsp; **Version:** 1.4.2 &nbsp;|&nbsp; **Go:** 1.26+ &nbsp;|&nbsp; **Dependencies:** Zero external runtime dependencies
 
 This tutorial walks you through building a complete, production-ready MCP server with AegisGate MCP — from registering custom tools to enrolling agents with RBAC, configuring security policies, and connecting a real MCP client.
 
@@ -181,7 +181,7 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 Mcp-Session-Id: a1b2c3d4e5f6...
 
-{"jsonrpc":"2.0","result":{"protocolVersion":"2025-06-18","serverInfo":{"name":"aegisgate-mcp","version":"1.4.1"},...},"id":1}
+{"jsonrpc":"2.0","result":{"protocolVersion":"2025-06-18","serverInfo":{"name":"aegisgate-mcp","version":"1.4.2"},...},"id":1}
 ```
 
 Now call your tool (include the session ID):

@@ -39,8 +39,6 @@ type SecuredMCPServer struct {
 	// Catches semantic attacks and evasion variants that regex (L1) misses.
 	// Nil when ML is disabled or CGO is unavailable.
 	threatDetector *ml.ThreatDetector
-	// Evasion detector: detects encoding/splitting/obfuscation techniques.
-	evasionDetector *ml.EvasionDetector
 	// ML inference throttle — rate-limits ML detection to prevent
 	// standalone server from being used as high-throughput ML API.
 	mlThrottle *ml.Throttle
@@ -110,7 +108,6 @@ func NewSecuredMCPServer(cfg *ServerConfigV2) (*SecuredMCPServer, error) {
 	// Catches semantic attacks and evasion variants that regex (L1) misses.
 	// Falls back to heuristic-only when CGO is disabled (no ONNX runtime).
 	var threatDetector *ml.ThreatDetector
-	var evasionDetector *ml.EvasionDetector
 	if cfg.MLEnabled || cfg.MLShadowMode {
 		mlCfg := ml.DefaultDetectorConfig()
 		mlCfg.Enabled = cfg.MLEnabled
@@ -137,7 +134,6 @@ func NewSecuredMCPServer(cfg *ServerConfigV2) (*SecuredMCPServer, error) {
 				"model", mlCfg.ModelPath, "threshold", mlCfg.Threshold,
 				"shadow_mode", mlCfg.ShadowMode)
 		}
-		evasionDetector = ml.NewEvasionDetector()
 	}
 
 	// Wire ML threat detector to handler for input parameter scanning
@@ -160,20 +156,19 @@ func NewSecuredMCPServer(cfg *ServerConfigV2) (*SecuredMCPServer, error) {
 
 	// Build server
 	srv := &SecuredMCPServer{
-		config:          cfg,
-		handler:         handler,
-		guardrails:      guardrails,
-		scanner:         scanner,
-		authMgr:         authMgr,
-		sigVerifier:     sigVerifier,
-		stdioGuard:      stdioGuard,
-		auditLogger:     auditLogger,
-		sessionMgr:      sessionMgr,
-		rbacMgr:         rbacMgr,
-		policyEngine:    policyEngine,
-		threatDetector:  threatDetector,
-		evasionDetector: evasionDetector,
-		mlThrottle:      mlThrottle,
+		config:         cfg,
+		handler:        handler,
+		guardrails:     guardrails,
+		scanner:        scanner,
+		authMgr:        authMgr,
+		sigVerifier:    sigVerifier,
+		stdioGuard:     stdioGuard,
+		auditLogger:    auditLogger,
+		sessionMgr:     sessionMgr,
+		rbacMgr:        rbacMgr,
+		policyEngine:   policyEngine,
+		threatDetector: threatDetector,
+		mlThrottle:     mlThrottle,
 	}
 
 	// Wire the handler chain: auth → guardrails → response scan → handler
@@ -696,6 +691,7 @@ func ServeWithOptions(cfg *ServerConfigV2, opts *ServeOptions) error {
 			chain = srv.wrapWithResponseScan(chain)
 		}
 		chain = srv.guardrails.GuardrailHandler(chain)
+		chain = srv.wrapWithSignatureVerification(chain)
 		chain = srv.authMgr.AuthMiddleware(chain)
 
 		transport := newStdioTransport(chain)
@@ -738,6 +734,7 @@ func ServeWithOptions(cfg *ServerConfigV2, opts *ServeOptions) error {
 			chain = srv.wrapWithResponseScan(chain)
 		}
 		chain = srv.guardrails.GuardrailHandler(chain)
+		chain = srv.wrapWithSignatureVerification(chain)
 		chain = srv.authMgr.AuthMiddleware(chain)
 
 		transport := newStreamableHTTPTransport(cfg.Address, chain)

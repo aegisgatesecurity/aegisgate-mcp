@@ -3,7 +3,7 @@
 **Product:** AegisGate MCP  
 **Trademarks:** AegisGate MCP is a product of AegisGate Security, LLC  
 **License:** Apache-2.0  
-**Version:** 1.4.1  
+**Version:** 1.4.2  
 **Runtime:** Go 1.26+ (zero external dependencies)  
 **Audience:** System administrators managing AegisGate MCP in production  
 
@@ -603,7 +603,7 @@ If `HealthAddr` is not configured, the health endpoint is disabled.
 
 | Endpoint | Method | Success Response | Failure Response |
 |----------|--------|------------------|------------------|
-| `/healthz` | GET | `200` + `{"status":"ok","version":"1.4.1"}` | — |
+| `/healthz` | GET | `200` + `{"status":"ok","version":"1.4.2"}` | — |
 | `/readyz` | GET | `200` + `{"status":"ready"}` | `503` + `{"status":"not ready"}` |
 | `/stats` | GET | `200` + JSON stats object | — |
 
@@ -918,6 +918,6 @@ When investigating an issue, work through this checklist in order:
 
 ---
 
-*This document is the definitive reference for administering AegisGate MCP v1.4.1. For API and development documentation, refer to the Go package documentation and the project repository.*
+*This document is the definitive reference for administering AegisGate MCP v1.4.2. For API and development documentation, refer to the Go package documentation and the project repository.*
 
 *AegisGate MCP is a product of AegisGate Security, LLC. Licensed under Apache-2.0.*
