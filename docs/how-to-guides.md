@@ -3,7 +3,7 @@
 **Product:** AegisGate MCP — A security-first MCP server for AI agents  
 **Trademark:** AegisGate MCP is a product of AegisGate Security, LLC  
 **License:** Apache-2.0  
-**Version:** 1.4.0  
+**Version:** 1.4.1  
 **Go Module:** `github.com/aegisgatesecurity/aegisgate-mcp`  
 **Go Version:** 1.26+  
 **Dependencies:** Zero external runtime dependencies  
