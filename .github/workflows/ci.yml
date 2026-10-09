@@ -217,8 +217,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Docker Hub login (optional, raises rate limit)
+        if: ${{ vars.DOCKERHUB_USERNAME != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Build Docker image
-        run: docker build -t aegisgate-mcp:test .
+        run: |
+          for attempt in 1 2 3; do
+            if docker build -t aegisgate-mcp:test .; then
+              echo "Docker build succeeded on attempt $attempt"
+              break
+            fi
+            echo "Docker build failed on attempt $attempt (likely Docker Hub rate limit), retrying in 30s..."
+            sleep 30
+            if [ $attempt -eq 3 ]; then
+              echo "Docker build failed after 3 attempts"
+              exit 1
+            fi
+          done
       - name: Start container
         run: |
           docker run -d --name mcp-test -p 8081:8081 -p 8082:8082 \

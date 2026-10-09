@@ -91,7 +91,19 @@ jobs:
           category: trivy-fs
         continue-on-error: true
       - name: Build Docker image for scan
-        run: docker build -t aegisgate-mcp:scan .
+        run: |
+          for attempt in 1 2 3; do
+            if docker build -t aegisgate-mcp:scan .; then
+              echo "Docker build succeeded on attempt $attempt"
+              break
+            fi
+            echo "Docker build failed on attempt $attempt (likely Docker Hub rate limit), retrying in 30s..."
+            sleep 30
+            if [ $attempt -eq 3 ]; then
+              echo "Docker build failed after 3 attempts"
+              exit 1
+            fi
+          done
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
