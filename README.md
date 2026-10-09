@@ -23,7 +23,7 @@ Apache 2.0 · 22 security layers · 30 regex patterns + CharCNN-BiLSTM (v13) ML 
 
 [Quick Start](#quick-start) · [Security Layers](#security-layers) · [RBAC](#rbac-roles) · [Architecture](#architecture) · [Protocol](#mcp-protocol-support) · [Docs](#documentation) · [Releases](https://github.com/aegisgatesecurity/aegisgate-mcp/releases)
 
-[![GitHub stars](https://img.shields.io/github/stars/aegisgatesecurity/aegisgate-mcp?style=flat&label=Stars)](https://github.com/aegisgatesecurity/aegisgate-mcp) — **If AegisGate MCP helps you secure your AI agents, please consider ⭐ starring this repo. It helps others discover it.**
+[![GitHub stars](https://img.shields.io/github/stars/aegisgatesecurity/aegisgate-mcp?style=social)](https://github.com/aegisgatesecurity/aegisgate-mcp) — **If AegisGate MCP helps you secure your AI agents, please consider ⭐ starring this repo. It helps others discover it.**
 
 </div>
 
