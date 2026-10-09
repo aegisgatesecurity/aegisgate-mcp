@@ -52,6 +52,18 @@ type streamableHTTPTransport struct {
 	// session management
 	sessions  map[string]*httpSession // session ID → session
 	sessionMu sync.RWMutex
+
+	// SSE connection registry: tracks active long-lived SSE connections
+	// so the server can push notifications to connected clients.
+	sseConns  map[string]*sseConn // session ID → active SSE connection
+	sseConnMu sync.RWMutex
+}
+
+// sseConn wraps an active SSE connection for notification delivery.
+type sseConn struct {
+	w        http.ResponseWriter
+	flusher  http.Flusher
+	canFlush bool
 }
 
 // httpSession tracks an active Streamable HTTP session.
@@ -68,6 +80,7 @@ func newStreamableHTTPTransport(addr string, handler HandlerFunc) *streamableHTT
 		handler:  handler,
 		addr:     addr,
 		sessions: make(map[string]*httpSession),
+		sseConns: make(map[string]*sseConn),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mcp", t.handleMCP)
@@ -181,8 +194,14 @@ func (t *streamableHTTPTransport) start(ctx context.Context) error {
 // handleMCP processes incoming MCP requests over HTTP.
 func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Request) {
 	// Per MCP 2025-06-18 Streamable HTTP spec:
+	// - GET: open a long-lived SSE connection for server-initiated messages
 	// - POST: send a JSON-RPC request or notification
 	// - DELETE: terminate the session
+	if r.Method == http.MethodGet {
+		t.handleSSEStream(w, r)
+		return
+	}
+
 	if r.Method == http.MethodDelete {
 		sessionID := r.Header.Get("Mcp-Session-Id")
 		if sessionID == "" {
@@ -197,7 +216,7 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 
 	// Only accept POST (per MCP 2025-06-18 Streamable HTTP spec)
 	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST, DELETE")
+		w.Header().Set("Allow", "GET, POST, DELETE")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -266,8 +285,9 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 	}
 
 	if wantSSE {
-		// SSE streaming mode: respond with text/event-stream
-		t.writeSSEResponse(w, resp)
+		// SSE streaming mode: respond with text/event-stream and hold
+		// the connection open for server-initiated notifications.
+		t.writeSSEResponse(w, resp, conn.Session.ID, r)
 		return
 	}
 
@@ -297,10 +317,52 @@ func acceptsSSE(r *http.Request) bool {
 	return false
 }
 
+// handleSSEStream handles GET requests to open a long-lived SSE connection
+// for receiving server-initiated notifications. Per MCP 2025-06-18, this
+// is optional but recommended for real-time notification delivery.
+func (t *streamableHTTPTransport) handleSSEStream(w http.ResponseWriter, r *http.Request) {
+	// Validate session
+	sessionID := r.Header.Get("Mcp-Session-Id")
+	if sessionID == "" {
+		http.Error(w, "missing Mcp-Session-Id header", http.StatusBadRequest)
+		return
+	}
+	sess := t.getSession(sessionID)
+	if sess == nil {
+		w.Header().Set("MCP-Protocol-Version", ProtocolVersion)
+		http.Error(w, "session not found or expired", http.StatusNotFound)
+		return
+	}
+	t.touchSession(sessionID)
+
+	// Open SSE stream
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("MCP-Protocol-Version", ProtocolVersion)
+	w.WriteHeader(http.StatusOK)
+
+	flusher, canFlush := w.(http.Flusher)
+
+	// Send an initial comment to signal the stream is open
+	_, _ = w.Write([]byte(": stream-open\n\n"))
+	if canFlush {
+		flusher.Flush()
+	}
+
+	// Register this connection for notification delivery
+	t.registerSSEConn(sessionID, w, flusher, canFlush)
+	defer t.unregisterSSEConn(sessionID)
+
+	// Hold the connection open until the client disconnects
+	<-r.Context().Done()
+	slog.Debug("SSE stream closed by client", "session_id", sessionID)
+}
+
 // writeSSEResponse writes a JSON-RPC response (or notification ack) as an
-// SSE event stream. For responses, it sends a single data event. For
-// notifications (nil response), it sends a comment ack and closes.
-func (t *streamableHTTPTransport) writeSSEResponse(w http.ResponseWriter, resp *JSONRPCResponse) {
+// SSE event, then holds the connection open for server-initiated notifications.
+// The connection is unregistered when the client disconnects.
+func (t *streamableHTTPTransport) writeSSEResponse(w http.ResponseWriter, resp *JSONRPCResponse, sessionID string, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -309,50 +371,76 @@ func (t *streamableHTTPTransport) writeSSEResponse(w http.ResponseWriter, resp *
 	flusher, canFlush := w.(http.Flusher)
 
 	if resp == nil {
-		// Notification — send comment ack, no data event
+		// Client notification — send comment ack
 		_, _ = w.Write([]byte(": ack\n\n"))
 		if canFlush {
 			flusher.Flush()
 		}
-		return
-	}
-
-	// Write the JSON-RPC response as an SSE data event
-	data, err := json.Marshal(resp)
-	if err != nil {
-		slog.Error("failed to marshal SSE response", "error", err)
-		return
-	}
-	_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
-	if canFlush {
-		flusher.Flush()
-	}
-}
-
-// makeNotificationCallback creates a NotificationCallback that writes
-// server-initiated notifications as SSE events to the given ResponseWriter.
-// This is used for P2 (list_changed) and P3 (resources/updated) notifications.
-func (t *streamableHTTPTransport) makeNotificationCallback(w http.ResponseWriter) NotificationCallback {
-	flusher, canFlush := w.(http.Flusher)
-	return func(method string, params interface{}) {
-		notification := JSONRPCResponse{
-			JSONRPC: JSONRPCVersion,
-			Result: map[string]interface{}{
-				"method": method,
-				"params": params,
-			},
-		}
-		// For notifications, we use a nil ID to indicate no response expected
-		notification.ID = nil
-		data, err := json.Marshal(notification)
+	} else {
+		// Write the JSON-RPC response as an SSE data event
+		data, err := json.Marshal(resp)
 		if err != nil {
-			slog.Error("failed to marshal notification", "error", err)
+			slog.Error("failed to marshal SSE response", "error", err)
 			return
 		}
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 		if canFlush {
 			flusher.Flush()
 		}
+	}
+
+	// Register this connection for server-initiated notification delivery
+	t.registerSSEConn(sessionID, w, flusher, canFlush)
+	defer t.unregisterSSEConn(sessionID)
+
+	// Hold the connection open until the client disconnects or server shuts down
+	<-r.Context().Done()
+	slog.Debug("SSE response stream closed by client", "session_id", sessionID)
+}
+
+// registerSSEConn registers an active SSE connection for notification delivery.
+func (t *streamableHTTPTransport) registerSSEConn(sessionID string, w http.ResponseWriter, flusher http.Flusher, canFlush bool) {
+	t.sseConnMu.Lock()
+	defer t.sseConnMu.Unlock()
+	t.sseConns[sessionID] = &sseConn{w: w, flusher: flusher, canFlush: canFlush}
+	slog.Debug("registered SSE connection", "session_id", sessionID, "total", len(t.sseConns))
+}
+
+// unregisterSSEConn removes an SSE connection from the registry.
+func (t *streamableHTTPTransport) unregisterSSEConn(sessionID string) {
+	t.sseConnMu.Lock()
+	defer t.sseConnMu.Unlock()
+	delete(t.sseConns, sessionID)
+	slog.Debug("unregistered SSE connection", "session_id", sessionID, "remaining", len(t.sseConns))
+}
+
+// broadcastNotification sends a JSON-RPC notification to all active SSE
+// connections. This is the NotificationCallback wired to the handler.
+func (t *streamableHTTPTransport) broadcastNotification(method string, params interface{}) {
+	notification := JSONRPCNotification{
+		JSONRPC: JSONRPCVersion,
+		Method:  method,
+		Params:  params,
+	}
+	data, err := json.Marshal(notification)
+	if err != nil {
+		slog.Error("failed to marshal notification", "error", err)
+		return
+	}
+
+	t.sseConnMu.RLock()
+	defer t.sseConnMu.RUnlock()
+
+	for sessionID, conn := range t.sseConns {
+		_, err := fmt.Fprintf(conn.w, "data: %s\n\n", data)
+		if err != nil {
+			slog.Debug("failed to write notification to SSE connection", "session_id", sessionID, "error", err)
+			continue
+		}
+		if conn.canFlush {
+			conn.flusher.Flush()
+		}
+		slog.Debug("delivered notification via SSE", "session_id", sessionID, "method", method)
 	}
 }
 

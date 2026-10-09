@@ -5,6 +5,59 @@ All notable changes to AegisGate MCP are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] — 2026-10-09
+
+### Fixed
+
+- **Notification JSON-RPC format.** Server-initiated notifications now use
+  a proper `JSONRPCNotification` type with top-level `method` field per
+  JSON-RPC 2.0 spec. Previously, notifications were incorrectly wrapped
+  in a `JSONRPCResponse.Result` object with `id: null`, which no MCP client
+  could parse
+- **Notification callback wired in production.** `SetNotifyCallback()` is
+  now called in `ServeWithOptions()` for the HTTP transport, connecting
+  the handler's notification dispatch to the transport's SSE broadcast
+  mechanism. Previously, `NotifyCallback` was nil in production, making
+  all `Notify*ListChanged()` and `NotifyResourceUpdated()` calls silent
+  no-ops
+- **Long-lived SSE connections.** SSE connections are now held open after
+  the initial response, allowing server-initiated notifications to be
+  pushed to connected clients. The transport maintains a per-session
+  connection registry and broadcasts notifications to all active SSE
+  connections
+- **GET endpoint for SSE streams.** Added `GET /mcp` support per MCP
+  2025-06-18 spec. Clients can open a long-lived SSE connection for
+  server-initiated messages without sending a request. Requires a valid
+  `Mcp-Session-Id` header
+- `docs/comparison.md` TL;DR corrected from "21-layer" to "22-layer"
+- `TestStreamableHTTPMethodNotAllowed` updated to use PUT (GET is now
+  a supported method for SSE streams)
+
+### Added
+
+- `JSONRPCNotification` type in `types.go` — proper JSON-RPC 2.0
+  notification with top-level `method` and `params` fields
+- `sseConn` type and SSE connection registry in `streamable_http.go`
+- `registerSSEConn()`, `unregisterSSEConn()`, `broadcastNotification()`
+  methods on Streamable HTTP transport
+- `handleSSEStream()` handler for GET-based SSE streams
+- `readSSEBody()` test helper with timeout (replaces `io.ReadAll` which
+  blocks on now long-lived connections)
+- `TestSSENotificationDelivery` rewritten as true end-to-end test:
+  handler → broadcast → SSE connection → client reads notification,
+  verifies proper JSON-RPC notification format (top-level `method`,
+  no `result` field)
+
+### Changed
+
+- `writeSSEResponse()` now holds the connection open after writing the
+  response, registering it for notification delivery until the client
+  disconnects
+- Removed `makeNotificationCallback()` (per-request callback) — replaced
+  by `broadcastNotification()` (connection registry broadcast)
+- `handleMCP()` now handles GET requests for SSE streams
+- Allow header updated to `GET, POST, DELETE`
+
 ## [1.4.0] — 2026-10-09
 
 ### Added

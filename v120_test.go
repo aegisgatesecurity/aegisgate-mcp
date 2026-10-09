@@ -527,7 +527,12 @@ func TestStreamableHTTPMethodNotAllowed(t *testing.T) {
 	}
 	defer ln.Close()
 
-	resp, err := http.Get("http://" + ln.Addr().String() + "/mcp")
+	// PUT is not a supported MCP method (only GET, POST, DELETE)
+	req, err := http.NewRequest("PUT", "http://"+ln.Addr().String()+"/mcp", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("HTTP request failed: %v", err)
 	}
@@ -835,6 +840,35 @@ func httpPostWithSessionSSE(t *testing.T, addr, sessionID, body string) *http.Re
 	return resp
 }
 
+// readSSEBody reads the SSE response body with a timeout. The server now
+// holds SSE connections open for server-initiated notifications, so
+// io.ReadAll would block indefinitely. This helper reads whatever data
+// is available within the timeout, then closes the body.
+func readSSEBody(t *testing.T, resp *http.Response) string {
+	t.Helper()
+	defer resp.Body.Close()
+	type result struct {
+		data []byte
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		data, err := io.ReadAll(resp.Body)
+		ch <- result{data, err}
+	}()
+	select {
+	case r := <-ch:
+		if r.err != nil {
+			t.Fatalf("failed to read SSE body: %v", r.err)
+		}
+		return string(r.data)
+	case <-time.After(2 * time.Second):
+		resp.Body.Close() // force the goroutine to unblock
+		r := <-ch
+		return string(r.data)
+	}
+}
+
 func TestStreamableHTTPSSEInitialize(t *testing.T) {
 	handler := NewRequestHandler(nil, nil, nil)
 	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
@@ -862,11 +896,7 @@ func TestStreamableHTTPSSEInitialize(t *testing.T) {
 	}
 
 	// Read SSE body and verify it contains data: prefix
-	sseBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("failed to read SSE body: %v", err)
-	}
-	sseStr := string(sseBody)
+	sseStr := readSSEBody(t, resp)
 	if !strings.Contains(sseStr, "data: ") {
 		t.Errorf("SSE body does not contain 'data: ' prefix: %s", sseStr)
 	}
@@ -899,11 +929,7 @@ func TestStreamableHTTPSSEPing(t *testing.T) {
 		t.Errorf("Content-Type = %q, want text/event-stream", ct)
 	}
 
-	sseBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("failed to read SSE body: %v", err)
-	}
-	sseStr := string(sseBody)
+	sseStr := readSSEBody(t, resp)
 	if !strings.Contains(sseStr, "data: ") {
 		t.Errorf("SSE body does not contain 'data: ' prefix: %s", sseStr)
 	}
@@ -941,11 +967,7 @@ func TestStreamableHTTPSSENotification(t *testing.T) {
 	}
 
 	// Notifications in SSE mode should get a comment ack, not a data event
-	sseBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("failed to read SSE body: %v", err)
-	}
-	sseStr := string(sseBody)
+	sseStr := readSSEBody(t, resp)
 	if !strings.Contains(sseStr, ": ack") {
 		t.Errorf("SSE notification body does not contain ': ack': %q", sseStr)
 	}
@@ -976,11 +998,7 @@ func TestStreamableHTTPSSEToolsList(t *testing.T) {
 		t.Errorf("Content-Type = %q, want text/event-stream", ct)
 	}
 
-	sseBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("failed to read SSE body: %v", err)
-	}
-	sseStr := string(sseBody)
+	sseStr := readSSEBody(t, resp)
 	if !strings.Contains(sseStr, "data: ") {
 		t.Errorf("SSE body does not contain 'data: ': %s", sseStr)
 	}
@@ -1096,8 +1114,8 @@ func TestSecuredServerRegisterPrompt(t *testing.T) {
 // ============================================================
 
 func TestVersion120(t *testing.T) {
-	if Version != "1.4.0" {
-		t.Errorf("Version = %q, want %q", Version, "1.4.0")
+	if Version != "1.4.1" {
+		t.Errorf("Version = %q, want %q", Version, "1.4.1")
 	}
 }
 
@@ -1761,7 +1779,8 @@ func TestSecuredServerRegisterResourceTemplate(t *testing.T) {
 }
 
 // TestSSENotificationDelivery verifies that server-initiated notifications
-// are delivered as SSE events to connected clients.
+// are delivered as SSE events to connected clients through the full stack:
+// handler → broadcastNotification → SSE connection → client reads data event.
 func TestSSENotificationDelivery(t *testing.T) {
 	handler := NewRequestHandler(nil, nil, nil)
 	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
@@ -1773,25 +1792,77 @@ func TestSSENotificationDelivery(t *testing.T) {
 	}
 	defer ln.Close()
 
+	// Wire the transport's broadcast as the notification callback
+	handler.NotifyCallback = transport.broadcastNotification
+
 	sid := httpInitAndGetSession(t, ln.Addr().String())
 
-	// Set up a notification callback that writes SSE events
-	// In a real scenario, the SSE connection stays open and the server
-	// pushes notifications. Here we simulate by checking the callback works.
-	var notificationMethod string
-	handler.NotifyCallback = func(method string, params interface{}) {
-		notificationMethod = method
+	// Open an SSE connection by sending a request with Accept: text/event-stream.
+	// The server will write the response and then hold the connection open.
+	// We use a goroutine to read from the connection while we trigger a notification.
+	body := `{"jsonrpc":"2.0","method":"ping","id":99}`
+	resp := httpPostWithSessionSSE(t, ln.Addr().String(), sid, body)
+
+	// Read the first SSE event (the ping response) with a short timeout,
+	// then continue reading for the notification.
+	buf := make([]byte, 8192)
+	type readResult struct {
+		n   int
+		err error
+	}
+	ch := make(chan readResult, 1)
+	go func() {
+		// Read the initial response event
+		n, err := resp.Body.Read(buf)
+		ch <- readResult{n, err}
+	}()
+
+	// Wait for the initial response to arrive
+	select {
+	case r := <-ch:
+		if r.n == 0 && r.err != nil {
+			t.Fatalf("failed to read initial SSE response: %v", r.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for initial SSE response")
 	}
 
-	// Trigger a list_changed notification
+	// Give the server time to register the SSE connection
+	time.Sleep(100 * time.Millisecond)
+
+	// Trigger a server-initiated notification
 	handler.NotifyListChanged("tools")
 
-	if notificationMethod != "notifications/tools/list_changed" {
-		t.Errorf("expected notifications/tools/list_changed, got %s", notificationMethod)
-	}
+	// Read the notification event
+	ch2 := make(chan readResult, 1)
+	go func() {
+		n, err := resp.Body.Read(buf)
+		ch2 <- readResult{n, err}
+	}()
 
-	// Verify the session is still valid (notification doesn't break session)
-	_ = sid
+	select {
+	case r := <-ch2:
+		resp.Body.Close()
+		if r.n == 0 && r.err != nil {
+			t.Fatalf("failed to read notification SSE event: %v", r.err)
+		}
+		notificationData := string(buf[:r.n])
+		// Verify the notification is a proper JSON-RPC notification with
+		// top-level "method" field (not nested in "result")
+		if !strings.Contains(notificationData, "data: ") {
+			t.Errorf("notification SSE event missing 'data: ' prefix: %q", notificationData)
+		}
+		if !strings.Contains(notificationData, "notifications/tools/list_changed") {
+			t.Errorf("notification SSE event missing method: %q", notificationData)
+		}
+		// Verify it uses the JSONRPCNotification format (top-level method, not nested in result)
+		if strings.Contains(notificationData, `"result"`) {
+			t.Errorf("notification should not have 'result' field (should be top-level method): %q", notificationData)
+		}
+	case <-time.After(2 * time.Second):
+		resp.Body.Close()
+		t.Fatal("timeout waiting for notification SSE event")
+	}
 }
 
 // TestUnsubscribeWithoutSubscribe verifies unsubscribe is idempotent.
