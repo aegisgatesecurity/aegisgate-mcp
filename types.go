@@ -197,6 +197,16 @@ type JSONRPCError struct {
 	Data    interface{} `json:"data,omitempty"`
 }
 
+// JSONRPCNotification represents a JSON-RPC 2.0 notification (no ID, no
+// response expected). Per the JSON-RPC 2.0 spec, a notification has a
+// top-level `method` field — it is NOT wrapped in a `result` object.
+// Used for server-initiated messages like notifications/tools/list_changed.
+type JSONRPCNotification struct {
+	JSONRPC string      `json:"jsonrpc"`
+	Method  string      `json:"method"`
+	Params  interface{} `json:"params,omitempty"`
+}
+
 // --- Session ---
 
 type Session struct {

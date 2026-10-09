@@ -1,6 +1,6 @@
 # Comparison: AegisGate MCP vs Other MCP Security Approaches
 
-> **TL;DR:** AegisGate MCP is the only zero-dependency, ML-enhanced, 21-layer
+> **TL;DR:** AegisGate MCP is the only zero-dependency, ML-enhanced, 22-layer
 > security framework for MCP servers. Everything else is either an unsecured
 > SDK or a bolt-on wrapper.
 

@@ -741,6 +741,12 @@ func ServeWithOptions(cfg *ServerConfigV2, opts *ServeOptions) error {
 		chain = srv.authMgr.AuthMiddleware(chain)
 
 		transport := newStreamableHTTPTransport(cfg.Address, chain)
+
+		// Wire the notification callback so server-initiated notifications
+		// (list_changed, resources/updated) are delivered to active SSE
+		// connections via the transport's broadcast mechanism.
+		srv.SetNotifyCallback(transport.broadcastNotification)
+
 		if err := transport.start(ctx); err != nil {
 			return err
 		}
