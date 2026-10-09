@@ -1866,6 +1866,172 @@ func TestSSENotificationDelivery(t *testing.T) {
 }
 
 // TestUnsubscribeWithoutSubscribe verifies unsubscribe is idempotent.
+// TestSSEGetStream verifies that GET /mcp opens a long-lived SSE stream
+// for server-initiated notifications. This tests the handleSSEStream path,
+// registerSSEConn, unregisterSSEConn, and broadcastNotification delivery
+// through a GET-based stream (not POST).
+func TestSSEGetStream(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
+		return handler.HandleRequest(conn, req)
+	})
+	ln, err := startStreamableHTTPListener(transport)
+	if err != nil {
+		t.Fatalf("startStreamableHTTPListener failed: %v", err)
+	}
+	defer ln.Close()
+
+	// Wire broadcast as the notification callback
+	handler.NotifyCallback = transport.broadcastNotification
+
+	// Initialize to get a session
+	sid := httpInitAndGetSession(t, ln.Addr().String())
+
+	// Open a GET SSE stream with the session ID
+	req, err := http.NewRequest("GET", "http://"+ln.Addr().String()+"/mcp", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Mcp-Session-Id", sid)
+	req.Header.Set("Accept", "text/event-stream")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET SSE stream failed: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("StatusCode = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		t.Errorf("Content-Type = %q, want text/event-stream", ct)
+	}
+
+	// Read the initial stream-open comment
+	buf := make([]byte, 4096)
+	type readResult struct {
+		n   int
+		err error
+	}
+	ch := make(chan readResult, 1)
+	go func() {
+		n, err := resp.Body.Read(buf)
+		ch <- readResult{n, err}
+	}()
+	select {
+	case r := <-ch:
+		if r.n == 0 && r.err != nil {
+			t.Fatalf("failed to read stream-open: %v", r.err)
+		}
+		if !strings.Contains(string(buf[:r.n]), "stream-open") {
+			t.Errorf("expected stream-open comment, got: %q", string(buf[:r.n]))
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for stream-open")
+	}
+
+	// Give the server time to register the SSE connection
+	time.Sleep(100 * time.Millisecond)
+
+	// Trigger a notification
+	handler.NotifyListChanged("resources")
+
+	// Read the notification from the stream
+	ch2 := make(chan readResult, 1)
+	go func() {
+		n, err := resp.Body.Read(buf)
+		ch2 <- readResult{n, err}
+	}()
+	select {
+	case r := <-ch2:
+		resp.Body.Close()
+		data := string(buf[:r.n])
+		if !strings.Contains(data, "notifications/resources/list_changed") {
+			t.Errorf("notification missing method: %q", data)
+		}
+		if strings.Contains(data, `"result"`) {
+			t.Errorf("notification should not have result field: %q", data)
+		}
+	case <-time.After(2 * time.Second):
+		resp.Body.Close()
+		t.Fatal("timeout waiting for notification on GET stream")
+	}
+}
+
+// TestSSEGetStreamNoSession verifies that GET /mcp without a session ID
+// returns 400 Bad Request.
+func TestSSEGetStreamNoSession(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
+		return handler.HandleRequest(conn, req)
+	})
+	ln, err := startStreamableHTTPListener(transport)
+	if err != nil {
+		t.Fatalf("startStreamableHTTPListener failed: %v", err)
+	}
+	defer ln.Close()
+
+	req, err := http.NewRequest("GET", "http://"+ln.Addr().String()+"/mcp", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("StatusCode = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+}
+
+// TestSSEGetStreamInvalidSession verifies that GET /mcp with an invalid
+// session ID returns 404 Not Found.
+func TestSSEGetStreamInvalidSession(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
+		return handler.HandleRequest(conn, req)
+	})
+	ln, err := startStreamableHTTPListener(transport)
+	if err != nil {
+		t.Fatalf("startStreamableHTTPListener failed: %v", err)
+	}
+	defer ln.Close()
+
+	req, err := http.NewRequest("GET", "http://"+ln.Addr().String()+"/mcp", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Mcp-Session-Id", "invalid-session-id")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("StatusCode = %d, want %d", resp.StatusCode, http.StatusNotFound)
+	}
+}
+
+// TestBroadcastNotificationNoConnections verifies that broadcastNotification
+// does not panic when there are no active SSE connections.
+func TestBroadcastNotificationNoConnections(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
+		return handler.HandleRequest(conn, req)
+	})
+	ln, err := startStreamableHTTPListener(transport)
+	if err != nil {
+		t.Fatalf("startStreamableHTTPListener failed: %v", err)
+	}
+	defer ln.Close()
+
+	handler.NotifyCallback = transport.broadcastNotification
+
+	// Broadcast with no active connections — should not panic
+	handler.NotifyListChanged("tools")
+	handler.NotifyResourceUpdated("test://resource")
+}
+
 func TestUnsubscribeWithoutSubscribe(t *testing.T) {
 	handler := NewRequestHandler(nil, nil, nil)
 	handler.ResourceReg.Register("test://resource", "test", "test", "text/plain",
