@@ -15,7 +15,7 @@ AegisGate MCP follows semantic versioning.
 ## Security Architecture
 
 AegisGate MCP is a standalone Model Context Protocol (MCP) security server. It sits
-between MCP clients (AI agents) and MCP servers (tools), providing 21 security layers:
+between MCP clients (AI agents) and MCP servers (tools), providing 22 security layers:
 
 | Layer | Protection | Tier |
 |-------|-----------|------|
@@ -23,7 +23,7 @@ between MCP clients (AI agents) and MCP servers (tools), providing 21 security l
 | L2 | MITRE ATLAS compliance + input scanner | Heuristic |
 | L3 | CharCNN-BiLSTM neural threat detection (v13) | Neural |
 | — | Bearer token / API key authentication | Core |
-| — | HMAC-SHA256 signature verification | Core |
+| — | ECDSA P-256 signature verification | Core |
 | — | Session management with limits | Core |
 | — | RBAC policy engine | Core |
 | — | Policy engine (allowlist/denylist) | Core |
@@ -40,7 +40,6 @@ between MCP clients (AI agents) and MCP servers (tools), providing 21 security l
 | — | STDIO transport | Core |
 | — | Health endpoint | Core |
 | — | Parameter validation | Core |
-| — | Heuristic evasion detection | Heuristic |
 | — | NFKC Unicode normalization | Core |
 
 ### Dual Build Modes

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -1114,8 +1115,8 @@ func TestSecuredServerRegisterPrompt(t *testing.T) {
 // ============================================================
 
 func TestVersion120(t *testing.T) {
-	if Version != "1.4.1" {
-		t.Errorf("Version = %q, want %q", Version, "1.4.1")
+	if Version != "1.4.2" {
+		t.Errorf("Version = %q, want %q", Version, "1.4.2")
 	}
 }
 
@@ -2030,6 +2031,85 @@ func TestBroadcastNotificationNoConnections(t *testing.T) {
 	// Broadcast with no active connections — should not panic
 	handler.NotifyListChanged("tools")
 	handler.NotifyResourceUpdated("test://resource")
+}
+
+// TestBroadcastNotificationConcurrent verifies that concurrent calls to
+// broadcastNotification do not race on the SSE ResponseWriter. The sseConn
+// mutex serializes writes. Run with -race to verify.
+func TestBroadcastNotificationConcurrent(t *testing.T) {
+	handler := NewRequestHandler(nil, nil, nil)
+	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
+		return handler.HandleRequest(conn, req)
+	})
+	ln, err := startStreamableHTTPListener(transport)
+	if err != nil {
+		t.Fatalf("startStreamableHTTPListener failed: %v", err)
+	}
+	defer ln.Close()
+
+	handler.NotifyCallback = transport.broadcastNotification
+
+	sid := httpInitAndGetSession(t, ln.Addr().String())
+
+	// Open a GET SSE stream so the connection is registered
+	req, err := http.NewRequest("GET", "http://"+ln.Addr().String()+"/mcp", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Mcp-Session-Id", sid)
+	req.Header.Set("Accept", "text/event-stream")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET SSE stream failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Read the stream-open comment to ensure the connection is registered
+	buf := make([]byte, 4096)
+	type readResult struct {
+		n   int
+		err error
+	}
+	ch := make(chan readResult, 1)
+	go func() {
+		n, _ := resp.Body.Read(buf)
+		ch <- readResult{n, nil}
+	}()
+	select {
+	case <-ch:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for stream-open")
+	}
+	time.Sleep(100 * time.Millisecond) // ensure registration completes
+
+	// Fire notifications from multiple goroutines concurrently
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			if n%2 == 0 {
+				handler.NotifyListChanged("tools")
+			} else {
+				handler.NotifyListChanged("resources")
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	// If we get here without a race detector failure, the mutex works.
+}
+
+// TestSSEServerWriteTimeoutZero verifies that the HTTP server's WriteTimeout
+// is 0 (disabled). A finite WriteTimeout would kill long-lived SSE connections
+// after that duration, breaking server-initiated notification delivery.
+func TestSSEServerWriteTimeoutZero(t *testing.T) {
+	transport := newStreamableHTTPTransport("127.0.0.1:0", func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
+		return nil
+	})
+	if transport.httpSrv.WriteTimeout != 0 {
+		t.Errorf("WriteTimeout = %v, want 0 (disabled for long-lived SSE)", transport.httpSrv.WriteTimeout)
+	}
 }
 
 func TestUnsubscribeWithoutSubscribe(t *testing.T) {
