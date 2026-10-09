@@ -14,7 +14,7 @@ Apache 2.0 · 22 security layers · 30 regex patterns + CharCNN-BiLSTM (v13) ML 
 [![Version](https://img.shields.io/badge/Version-1.3.0-blue.svg)](#changelog)
 [![Coverage](https://img.shields.io/badge/Coverage-91.3%25-brightgreen.svg)](#test-coverage)
 [![Dependencies](https://img.shields.io/badge/Dependencies-Zero-success.svg)](#overview)
-[![Docker](https://img.shields.io/badge/Docker-DebianSlim-135MB-blue.svg)](#docker)
+[![Docker](https://img.shields.io/badge/Docker-DebianSlim--135MB-blue.svg)](#docker)
 [![ML](https://img.shields.io/badge/ML-CharCNN--BiLSTM_v13-purple.svg)](#ml-threat-detection-l3)
 [![Arch](https://img.shields.io/badge/Arch-amd64%20%7C%20arm64-orange.svg)](#build)
 [![CI](https://github.com/aegisgatesecurity/aegisgate-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/aegisgatesecurity/aegisgate-mcp/actions/workflows/ci.yml)
