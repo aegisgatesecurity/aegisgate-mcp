@@ -3,7 +3,7 @@
 //
 // This example demonstrates how to build a secured MCP server using the
 // AegisGate MCP framework. It registers a tool, a resource, and a prompt,
-// then serves over TCP with all 21 security layers active.
+// then serves over TCP with all 22 security layers active.
 //
 // Run:
 //
