@@ -247,6 +247,10 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 		t.touchSession(clientSessionID)
 	}
 
+	// Set the session ID context for subscription tracking
+	currentSessionID.Set(conn.Session.ID)
+	defer func() { currentSessionID.Set("") }()
+
 	// Check if client requests SSE streaming
 	wantSSE := acceptsSSE(r)
 
@@ -322,6 +326,33 @@ func (t *streamableHTTPTransport) writeSSEResponse(w http.ResponseWriter, resp *
 	_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 	if canFlush {
 		flusher.Flush()
+	}
+}
+
+// makeNotificationCallback creates a NotificationCallback that writes
+// server-initiated notifications as SSE events to the given ResponseWriter.
+// This is used for P2 (list_changed) and P3 (resources/updated) notifications.
+func (t *streamableHTTPTransport) makeNotificationCallback(w http.ResponseWriter) NotificationCallback {
+	flusher, canFlush := w.(http.Flusher)
+	return func(method string, params interface{}) {
+		notification := JSONRPCResponse{
+			JSONRPC: JSONRPCVersion,
+			Result: map[string]interface{}{
+				"method": method,
+				"params": params,
+			},
+		}
+		// For notifications, we use a nil ID to indicate no response expected
+		notification.ID = nil
+		data, err := json.Marshal(notification)
+		if err != nil {
+			slog.Error("failed to marshal notification", "error", err)
+			return
+		}
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+		if canFlush {
+			flusher.Flush()
+		}
 	}
 }
 

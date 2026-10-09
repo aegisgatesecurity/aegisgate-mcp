@@ -106,6 +106,22 @@ type ReadResourceResult struct {
 // ResourceHandlerFunc reads a resource by URI and returns its content.
 type ResourceHandlerFunc func(ctx context.Context, uri string) (*ResourceContent, error)
 
+// --- Resource Template Structures (MCP Spec 2025-06-18) ---
+
+// ResourceTemplate represents a URI template for parameterized resources.
+type ResourceTemplate struct {
+	URITemplate string `json:"uriTemplate"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	MimeType    string `json:"mimeType,omitempty"`
+}
+
+// ListResourceTemplatesResult is the response for resources/templates/list.
+type ListResourceTemplatesResult struct {
+	ResourceTemplates []ResourceTemplate `json:"resourceTemplates"`
+	NextCursor        string             `json:"nextCursor,omitempty"`
+}
+
 // --- Prompt Structures (MCP Spec 2025-06-18) ---
 
 // Prompt represents a server-side prompt template.
@@ -192,6 +208,11 @@ type Session struct {
 
 // HandlerFunc processes a single MCP JSON-RPC request.
 type HandlerFunc func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse
+
+// NotificationCallback is called when the server needs to send a
+// notification to connected clients (e.g. tools/list_changed).
+// The notification is delivered as a JSON-RPC notification (no ID).
+type NotificationCallback func(method string, params interface{})
 
 // ToolHandlerFunc executes a tool and returns its result.
 type ToolHandlerFunc func(ctx context.Context, params map[string]interface{}) (interface{}, error)
