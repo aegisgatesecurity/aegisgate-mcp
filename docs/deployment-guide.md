@@ -3,7 +3,7 @@
 **Product:** AegisGate MCP — Security-First MCP Server  
 **Vendor:** AegisGate Security, LLC  
 **License:** Apache-2.0  
-**Version:** 1.3.0  
+**Version:** 1.4.0  
 **Runtime:** Go 1.26+  
 **External Dependencies:** Zero  
 **Docker Base Image:** `debian:bookworm-slim` (~135 MB ML-enabled, ~8 MB heuristic-only)
@@ -606,7 +606,7 @@ Expected response:
 ```json
 {
   "status": "ok",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "uptime": "2h30m15s"
 }
 ```
