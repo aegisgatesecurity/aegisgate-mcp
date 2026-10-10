@@ -777,7 +777,7 @@ func TestHTTPSendElicitationWithSSEConn(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Verify the SSE event was written
-	sseData := buf.String()
+	sseData := mockWriter.String()
 	if !strings.Contains(sseData, "elicitation/create") {
 		t.Errorf("SSE data should contain elicitation/create: %s", sseData)
 	}
@@ -832,6 +832,7 @@ type mockResponseWriter struct {
 	header http.Header
 	body   *bytes.Buffer
 	status int
+	mu     sync.Mutex
 }
 
 func (m *mockResponseWriter) Header() http.Header {
@@ -842,11 +843,22 @@ func (m *mockResponseWriter) Header() http.Header {
 }
 
 func (m *mockResponseWriter) Write(data []byte) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.body.Write(data)
 }
 
 func (m *mockResponseWriter) WriteHeader(code int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.status = code
+}
+
+// String returns the body content in a thread-safe manner.
+func (m *mockResponseWriter) String() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.body.String()
 }
 
 type mockFlusher struct{}
