@@ -10,8 +10,12 @@
 package mcpsecurity
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -242,5 +246,96 @@ func BenchmarkJSONDecodeRequest(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		var req JSONRPCRequest
 		_ = json.Unmarshal(data, &req)
+	}
+}
+
+// ============================================================
+// HTTP Transport Benchmarks
+// ============================================================
+
+// BenchmarkHTTPPing measures the cost of a ping request over the
+// Streamable HTTP transport, including HTTP request/response overhead.
+func BenchmarkHTTPPing(b *testing.B) {
+	cfg := DefaultServerConfig()
+	cfg.Address = "127.0.0.1:0"
+	cfg.DemoTools = true
+	cfg.ScanResponses = false
+	cfg.BlockOnPII = false
+	cfg.BlockOnSecrets = false
+
+	srv, err := NewSecuredMCPServer(cfg)
+	if err != nil {
+		b.Fatalf("NewSecuredMCPServer: %v", err)
+	}
+	defer srv.Stop()
+
+	// Use httptest to create a test HTTP server with the handler chain
+	mux := http.NewServeMux()
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+		conn := &Connection{ID: "bench", Session: &Session{ID: "bench"}}
+		body, _ := io.ReadAll(r.Body)
+		var req JSONRPCRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		resp := srv.server.handleFunc(conn, &req)
+		if resp != nil {
+			data, _ := json.Marshal(resp)
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(data)
+		}
+	})
+
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	pingReq, _ := json.Marshal(&JSONRPCRequest{
+		JSONRPC: JSONRPCVersion, Method: "ping", ID: 1,
+	})
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		resp, err := http.Post(ts.URL+"/mcp", "application/json", bytes.NewReader(pingReq))
+		if err != nil {
+			b.Fatalf("POST: %v", err)
+		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}
+}
+
+// BenchmarkMiddlewareChain measures the cost of a tools/call request
+// through the full middleware chain (auth → sig → guardrails → scan → handler).
+// This is the most realistic benchmark for production request overhead.
+func BenchmarkMiddlewareChain(b *testing.B) {
+	cfg := DefaultServerConfig()
+	cfg.Address = "127.0.0.1:0"
+	cfg.AuthToken = "bench-token"
+	cfg.DemoTools = true
+	cfg.ScanResponses = true
+	cfg.BlockOnPII = false
+	cfg.BlockOnSecrets = false
+
+	srv, err := NewSecuredMCPServer(cfg)
+	if err != nil {
+		b.Fatalf("NewSecuredMCPServer: %v", err)
+	}
+	defer srv.Stop()
+
+	conn := &Connection{ID: "bench", Session: &Session{ID: "bench"}}
+	params, _ := json.Marshal(map[string]interface{}{
+		"name":      "ping",
+		"arguments": map[string]interface{}{},
+	})
+	req := &JSONRPCRequest{
+		JSONRPC: JSONRPCVersion, Method: "tools/call", Params: params, ID: 1,
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		srv.handler.HandleRequest(conn, req)
 	}
 }
