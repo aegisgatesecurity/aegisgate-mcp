@@ -81,4 +81,4 @@ go test -tags=load -v -timeout=120s ./...
 - **Go Version:** 1.26.9
 - **Dependencies:** Zero (Go standard library only)
 - **Security Layers:** 23 (including L2.5 Evasion Detection)
-- **Tests:** 494 (CGO) / 490 (non-CGO), 89.9% coverage (non-CGO) / 90.5% (CGO)
+- **Tests:** 502 (CGO) / 498 (non-CGO), 92.2% coverage (non-CGO) / 92.6% (CGO)
