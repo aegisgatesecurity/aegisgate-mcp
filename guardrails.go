@@ -14,10 +14,11 @@ import (
 
 // Guardrail error codes.
 const (
-	ErrMaxSessions       = "max_sessions_reached"
-	ErrSessionToolLimit  = "session_tool_limit_reached"
-	ErrExecTimeout       = "execution_timeout"
-	ErrRateLimitExceeded = "rate_limit_exceeded"
+	ErrMaxSessions         = "max_sessions_reached"
+	ErrSessionToolLimit    = "session_tool_limit_reached"
+	ErrPerToolSessionLimit = "per_tool_session_limit_reached"
+	ErrExecTimeout         = "execution_timeout"
+	ErrRateLimitExceeded   = "rate_limit_exceeded"
 )
 
 // GuardrailConfig holds configuration for the guardrail middleware.
@@ -27,6 +28,14 @@ type GuardrailConfig struct {
 	ExecTimeout        time.Duration // Max tool execution time (default: 30s)
 	RateLimitRPM       int           // Rate limit requests per minute (default: 60)
 	Enabled            bool
+	// MaxCallsPerToolPerSession limits the number of calls to a single
+	// tool per session. 0 = unlimited. Useful for restricting high-risk
+	// tools (e.g., exec) while allowing generous limits on read-only tools.
+	MaxCallsPerToolPerSession int
+	// ToolRateOverrides sets per-tool RPM overrides. Tools not in this
+	// map use the global RateLimitRPM. Keys are tool names, values are
+	// RPM limits. Example: {"exec": 5, "read_file": 120}
+	ToolRateOverrides map[string]int
 }
 
 // DefaultGuardrailConfig returns sensible defaults.
@@ -48,6 +57,9 @@ type sessionState struct {
 	CreatedAt  time.Time
 	LastSeen   time.Time
 	ClientAddr string
+	// Per-tool call counts for MaxCallsPerToolPerSession enforcement.
+	// Key: tool name → count.
+	toolCounts map[string]*int64
 }
 
 // rateBucket is a token bucket for per-connection rate limiting.
@@ -68,6 +80,8 @@ type GuardrailMiddleware struct {
 	rateBuckets map[string]*rateBucket
 	chain       *ChainAnalyzer
 	registry    *ToolRegistry
+	// Per-tool rate buckets: map[sessionID]map[toolName]*rateBucket
+	toolBuckets map[string]map[string]*rateBucket
 }
 
 // NewGuardrailMiddleware creates a new guardrail middleware.
@@ -79,6 +93,7 @@ func NewGuardrailMiddleware(cfg *GuardrailConfig, registry *ToolRegistry) *Guard
 		config:      cfg,
 		sessions:    make(map[string]*sessionState),
 		rateBuckets: make(map[string]*rateBucket),
+		toolBuckets: make(map[string]map[string]*rateBucket),
 		chain:       NewChainAnalyzer(),
 		registry:    registry,
 	}
@@ -147,6 +162,34 @@ func (g *GuardrailMiddleware) GuardrailHandler(inner HandlerFunc) HandlerFunc {
 		// Extract tool name for logging and chain analysis
 		toolName := extractToolName(req)
 		if toolName != "" {
+			// Per-tool call count limit
+			if g.config.MaxCallsPerToolPerSession > 0 {
+				toolCount := g.getOrCreateToolCount(state, toolName)
+				count := atomic.AddInt64(toolCount, 1)
+				if count > int64(g.config.MaxCallsPerToolPerSession) {
+					slog.Warn("per-tool session limit",
+						"session_id", sessionID, "tool", toolName, "count", count)
+					return &JSONRPCResponse{
+						JSONRPC: JSONRPCVersion, ID: req.ID,
+						Error: &JSONRPCError{Code: ErrorForbidden, Message: ErrPerToolSessionLimit},
+					}
+				}
+			}
+
+			// Per-tool rate limit override
+			if len(g.config.ToolRateOverrides) > 0 {
+				if toolRPM, ok := g.config.ToolRateOverrides[toolName]; ok && toolRPM > 0 {
+					if !g.checkToolRateLimit(sessionID, toolName, toolRPM) {
+						slog.Warn("per-tool rate limit exceeded",
+							"session_id", sessionID, "tool", toolName, "rpm", toolRPM)
+						return &JSONRPCResponse{
+							JSONRPC: JSONRPCVersion, ID: req.ID,
+							Error: &JSONRPCError{Code: ErrorRateLimited, Message: ErrRateLimitExceeded},
+						}
+					}
+				}
+			}
+
 			// Chain analysis
 			chainResult := g.chain.RecordCall(sessionID, toolName)
 			if chainResult != nil && chainResult.OverallRisk == ChainRiskHigh {
@@ -224,9 +267,73 @@ func (g *GuardrailMiddleware) getOrCreateSession(sessionID string, conn *Connect
 	s := &sessionState{
 		ID: sessionID, AgentID: agentID,
 		CreatedAt: time.Now(), LastSeen: time.Now(),
+		toolCounts: make(map[string]*int64),
 	}
 	g.sessions[sessionID] = s
 	return s
+}
+
+// getOrCreateToolCount returns the per-tool call counter for a session,
+// creating it if it does not exist. Must be called after getOrCreateSession
+// to ensure the session exists.
+func (g *GuardrailMiddleware) getOrCreateToolCount(state *sessionState, toolName string) *int64 {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if state.toolCounts == nil {
+		state.toolCounts = make(map[string]*int64)
+	}
+	if c, ok := state.toolCounts[toolName]; ok {
+		return c
+	}
+	var c int64
+	state.toolCounts[toolName] = &c
+	return &c
+}
+
+// checkToolRateLimit implements per-tool token bucket rate limiting.
+// Uses the same algorithm as checkRateLimit but with a per-tool RPM
+// and a per-session+tool key.
+func (g *GuardrailMiddleware) checkToolRateLimit(sessionID, toolName string, rpm int) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	now := time.Now()
+
+	sessionBuckets, ok := g.toolBuckets[sessionID]
+	if !ok {
+		sessionBuckets = make(map[string]*rateBucket)
+		g.toolBuckets[sessionID] = sessionBuckets
+	}
+
+	capacity := int64(rpm)
+	bucket, ok := sessionBuckets[toolName]
+	if !ok {
+		sessionBuckets[toolName] = &rateBucket{
+			tokens:         capacity - 1,
+			capacity:       capacity,
+			lastRefillTime: now,
+		}
+		return true
+	}
+
+	// Refill tokens based on elapsed time
+	elapsed := now.Sub(bucket.lastRefillTime)
+	if elapsed > 0 {
+		refillRate := float64(rpm) / 60.0
+		tokensToAdd := int64(elapsed.Seconds() * refillRate)
+		if tokensToAdd > 0 {
+			bucket.tokens += tokensToAdd
+			if bucket.tokens > bucket.capacity {
+				bucket.tokens = bucket.capacity
+			}
+			bucket.lastRefillTime = now
+		}
+	}
+
+	if bucket.tokens > 0 {
+		bucket.tokens--
+		return true
+	}
+	return false
 }
 
 func extractToolName(req *JSONRPCRequest) string {

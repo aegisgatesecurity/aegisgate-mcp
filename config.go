@@ -33,6 +33,12 @@ type ServerConfigV2 struct {
 	MaxToolsPerSession int
 	ExecTimeout        time.Duration
 	RateLimitRPM       int
+	// MaxCallsPerToolPerSession limits calls to a single tool per session.
+	// 0 = unlimited. Useful for restricting high-risk tools.
+	MaxCallsPerToolPerSession int
+	// ToolRateOverrides sets per-tool RPM overrides. Tools not in this
+	// map use the global RateLimitRPM. Example: {"exec": 5, "read_file": 120}
+	ToolRateOverrides map[string]int
 
 	// Response scanning
 	ScanResponses       bool
@@ -141,11 +147,13 @@ func DefaultServerConfig() *ServerConfigV2 {
 // ToGuardrailConfig converts to guardrail config.
 func (c *ServerConfigV2) ToGuardrailConfig() *GuardrailConfig {
 	return &GuardrailConfig{
-		MaxSessions:        c.MaxSessions,
-		MaxToolsPerSession: c.MaxToolsPerSession,
-		ExecTimeout:        c.ExecTimeout,
-		RateLimitRPM:       c.RateLimitRPM,
-		Enabled:            true,
+		MaxSessions:               c.MaxSessions,
+		MaxToolsPerSession:        c.MaxToolsPerSession,
+		ExecTimeout:               c.ExecTimeout,
+		RateLimitRPM:              c.RateLimitRPM,
+		MaxCallsPerToolPerSession: c.MaxCallsPerToolPerSession,
+		ToolRateOverrides:         c.ToolRateOverrides,
+		Enabled:                   true,
 	}
 }
 
