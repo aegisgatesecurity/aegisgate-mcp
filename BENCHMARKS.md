@@ -16,43 +16,43 @@ These benchmarks measure the hot-path components to track performance across rel
 
 | Benchmark | ns/op | B/op | allocs/op | Description |
 |-----------|-------|------|-----------|-------------|
-| `BenchmarkPing` | 14,194 | 1,619 | 31 | Full ping request through handler dispatch |
+| `BenchmarkPing` | 12,829 | 1,619 | 31 | Full ping request through handler dispatch |
 | `BenchmarkInitialize` | 22,861 | 3,632 | 44 | Initialize handshake (auth + session creation) |
-| `BenchmarkToolsList` | 789 | 248 | 3 | List registered tools |
-| `BenchmarkAuthMiddleware` | 510 | 120 | 2 | Bearer token authentication check |
-| `BenchmarkMiddlewareChain` | 12,351 | 2,635 | 35 | Full chain: auth → sig → guardrails → scan → handler |
+| `BenchmarkToolsList` | 767 | 248 | 3 | List registered tools |
+| `BenchmarkAuthMiddleware` | 488 | 120 | 2 | Bearer token authentication check |
+| `BenchmarkMiddlewareChain` | 12,651 | 2,638 | 35 | Full chain: auth → sig → guardrails → scan → handler |
 
 ### Content Scanning
 
 | Benchmark | ns/op | B/op | allocs/op | Description |
 |-----------|-------|------|-----------|-------------|
-| `BenchmarkResponseScanShort` | 1,891 | 81 | 1 | Scan 100-char response (30 patterns) |
-| `BenchmarkResponseScanMedium` | 588,336 | 87 | 1 | Scan 10KB response |
-| `BenchmarkResponseScanLarge` | 5,310,191 | 169 | 1 | Scan 1MB response |
+| `BenchmarkResponseScanShort` | 1,846 | 80 | 1 | Scan 100-char response (30 patterns) |
+| `BenchmarkResponseScanMedium` | 590,831 | 87 | 1 | Scan 10KB response |
+| `BenchmarkResponseScanLarge` | 5,069,933 | 169 | 1 | Scan 1MB response |
 
 ### Serialization & Logging
 
 | Benchmark | ns/op | B/op | allocs/op | Description |
 |-----------|-------|------|-----------|-------------|
-| `BenchmarkJSONEncodeResponse` | 1,545 | 80 | 1 | JSON marshal a JSONRPCResponse |
-| `BenchmarkJSONDecodeRequest` | 5,260 | 432 | 11 | JSON unmarshal a JSONRPCRequest |
-| `BenchmarkAuditLog` | 3,620 | 1,400 | 7 | Write an audit log entry (hash-chained) |
+| `BenchmarkJSONEncodeResponse` | 1,506 | 80 | 1 | JSON marshal a JSONRPCResponse |
+| `BenchmarkJSONDecodeRequest` | 5,186 | 432 | 11 | JSON unmarshal a JSONRPCRequest |
+| `BenchmarkAuditLog` | 3,555 | 1,384 | 7 | Write an audit log entry (hash-chained) |
 
 ### HTTP Transport
 
 | Benchmark | ns/op | B/op | allocs/op | Description |
 |-----------|-------|------|-----------|-------------|
-| `BenchmarkHTTPPing` | 304,619 | 9,466 | 98 | Ping over Streamable HTTP (full HTTP roundtrip) |
+| `BenchmarkHTTPPing` | 310,553 | 9,503 | 98 | Ping over Streamable HTTP (full HTTP roundtrip) |
 
 ## Key Takeaways
 
-1. **Middleware chain overhead: ~12.3μs per request** — The full security chain (auth, signature verification, guardrails, response scanning, handler) adds only 12.3 microseconds per tools/call request. This is negligible compared to typical LLM API latency (100ms+).
+1. **Middleware chain overhead: ~12.7μs per request** — The full security chain (auth, signature verification, guardrails, response scanning, handler) adds only 12.7 microseconds per tools/call request. This is negligible compared to typical LLM API latency (100ms+).
 
-2. **Auth middleware: 510ns** — Bearer token authentication adds less than 1 microsecond. No measurable impact on request throughput.
+2. **Auth middleware: 488ns** — Bearer token authentication adds less than 1 microsecond. No measurable impact on request throughput.
 
 3. **Content scanning scales linearly** — Response scanning is O(n) in content length. A typical 100-character tool response scans in 1.9μs. A 10KB response scans in 588μs. The 30 regex patterns are compiled once at startup.
 
-4. **HTTP transport: 305μs per request** — The Streamable HTTP transport adds ~290μs of HTTP protocol overhead on top of the 14μs handler cost. This is expected for HTTP (TCP handshake, HTTP parsing, response writing).
+4. **HTTP transport: 311μs per request** — The Streamable HTTP transport adds ~298μs of HTTP protocol overhead on top of the 13μs handler cost. This is expected for HTTP (TCP handshake, HTTP parsing, response writing).
 
 5. **Zero allocation hot paths** — `BenchmarkToolsList` (3 allocs) and `BenchmarkAuthMiddleware` (2 allocs) are near-zero-allocation. The middleware chain's 35 allocs are dominated by JSON marshaling and audit logging.
 
