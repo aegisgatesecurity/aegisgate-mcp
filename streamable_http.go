@@ -55,7 +55,10 @@ type streamableHTTPTransport struct {
 
 	// SSE connection registry: tracks active long-lived SSE connections
 	// so the server can push notifications to connected clients.
-	sseConns  map[string]*sseConn // session ID → active SSE connection
+	// Supports multiple connections per session (multiplexing) for
+	// clients that open parallel SSE streams or reconnect while the
+	// old connection is still timing out.
+	sseConns  map[string][]*sseConn // session ID → active SSE connections
 	sseConnMu sync.RWMutex
 }
 
@@ -81,7 +84,7 @@ func newStreamableHTTPTransport(addr string, handler HandlerFunc) *streamableHTT
 		handler:  handler,
 		addr:     addr,
 		sessions: make(map[string]*httpSession),
-		sseConns: make(map[string]*sseConn),
+		sseConns: make(map[string][]*sseConn),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mcp", t.handleMCP)
@@ -358,8 +361,8 @@ func (t *streamableHTTPTransport) handleSSEStream(w http.ResponseWriter, r *http
 	}
 
 	// Register this connection for notification delivery
-	t.registerSSEConn(sessionID, w, flusher, canFlush)
-	defer t.unregisterSSEConn(sessionID)
+	conn := t.registerSSEConn(sessionID, w, flusher, canFlush)
+	defer t.unregisterSSEConn(sessionID, conn)
 
 	// Hold the connection open until the client disconnects
 	<-r.Context().Done()
@@ -397,8 +400,8 @@ func (t *streamableHTTPTransport) writeSSEResponse(w http.ResponseWriter, resp *
 	}
 
 	// Register this connection for server-initiated notification delivery
-	t.registerSSEConn(sessionID, w, flusher, canFlush)
-	defer t.unregisterSSEConn(sessionID)
+	conn := t.registerSSEConn(sessionID, w, flusher, canFlush)
+	defer t.unregisterSSEConn(sessionID, conn)
 
 	// Hold the connection open until the client disconnects or server shuts down
 	<-r.Context().Done()
@@ -406,19 +409,33 @@ func (t *streamableHTTPTransport) writeSSEResponse(w http.ResponseWriter, resp *
 }
 
 // registerSSEConn registers an active SSE connection for notification delivery.
-func (t *streamableHTTPTransport) registerSSEConn(sessionID string, w http.ResponseWriter, flusher http.Flusher, canFlush bool) {
+func (t *streamableHTTPTransport) registerSSEConn(sessionID string, w http.ResponseWriter, flusher http.Flusher, canFlush bool) *sseConn {
 	t.sseConnMu.Lock()
 	defer t.sseConnMu.Unlock()
-	t.sseConns[sessionID] = &sseConn{w: w, flusher: flusher, canFlush: canFlush}
-	slog.Debug("registered SSE connection", "session_id", sessionID, "total", len(t.sseConns))
+	conn := &sseConn{w: w, flusher: flusher, canFlush: canFlush}
+	t.sseConns[sessionID] = append(t.sseConns[sessionID], conn)
+	slog.Debug("registered SSE connection", "session_id", sessionID, "total_conns", len(t.sseConns[sessionID]))
+	return conn
 }
 
 // unregisterSSEConn removes an SSE connection from the registry.
-func (t *streamableHTTPTransport) unregisterSSEConn(sessionID string) {
+// With multiplexing, multiple connections may exist per session.
+// The connection is identified by pointer comparison.
+func (t *streamableHTTPTransport) unregisterSSEConn(sessionID string, conn *sseConn) {
 	t.sseConnMu.Lock()
 	defer t.sseConnMu.Unlock()
-	delete(t.sseConns, sessionID)
-	slog.Debug("unregistered SSE connection", "session_id", sessionID, "remaining", len(t.sseConns))
+	conns := t.sseConns[sessionID]
+	for i, c := range conns {
+		if c == conn {
+			// Remove this connection from the slice
+			t.sseConns[sessionID] = append(conns[:i], conns[i+1:]...)
+			if len(t.sseConns[sessionID]) == 0 {
+				delete(t.sseConns, sessionID)
+			}
+			slog.Debug("unregistered SSE connection", "session_id", sessionID, "remaining_conns", len(t.sseConns[sessionID]))
+			return
+		}
+	}
 }
 
 // broadcastNotification sends a JSON-RPC notification to all active SSE
@@ -438,19 +455,21 @@ func (t *streamableHTTPTransport) broadcastNotification(method string, params in
 	t.sseConnMu.RLock()
 	defer t.sseConnMu.RUnlock()
 
-	for sessionID, conn := range t.sseConns {
-		conn.mu.Lock()
-		_, err := fmt.Fprintf(conn.w, "data: %s\n\n", data)
-		if err != nil {
-			slog.Debug("failed to write notification to SSE connection", "session_id", sessionID, "error", err)
+	for sessionID, conns := range t.sseConns {
+		for _, conn := range conns {
+			conn.mu.Lock()
+			_, err := fmt.Fprintf(conn.w, "data: %s\n\n", data)
+			if err != nil {
+				slog.Debug("failed to write notification to SSE connection", "session_id", sessionID, "error", err)
+				conn.mu.Unlock()
+				continue
+			}
+			if conn.canFlush {
+				conn.flusher.Flush()
+			}
 			conn.mu.Unlock()
-			continue
+			slog.Debug("delivered notification via SSE", "session_id", sessionID, "method", method)
 		}
-		if conn.canFlush {
-			conn.flusher.Flush()
-		}
-		conn.mu.Unlock()
-		slog.Debug("delivered notification via SSE", "session_id", sessionID, "method", method)
 	}
 }
 
