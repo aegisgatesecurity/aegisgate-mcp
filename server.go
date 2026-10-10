@@ -249,10 +249,23 @@ func (s *Server) handleMCPProtocol(conn *Connection) {
 	lastSeenBatch := time.Now()
 	const lastSeenInterval = 5 * time.Second
 
+	// Per-connection notification function for TCP: writes notifications
+	// directly to the connection encoder. Set as thread-local before each
+	// dispatch so the handler can send notifications/progress and
+	// notifications/resources/updated via the encoder.
+	notifyFn := func(method string, params interface{}) {
+		conn.Conn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout))
+		_ = encoder.Encode(&JSONRPCNotification{
+			JSONRPC: JSONRPCVersion,
+			Method:  method,
+			Params:  params,
+		})
+	}
+
 	for {
 		conn.Conn.SetReadDeadline(time.Now().Add(s.config.ReadTimeout))
-		var req JSONRPCRequest
-		if err := decoder.Decode(&req); err != nil {
+		var rawMsg json.RawMessage
+		if err := decoder.Decode(&rawMsg); err != nil {
 			if err == io.EOF {
 				return
 			}
@@ -272,10 +285,67 @@ func (s *Server) handleMCPProtocol(conn *Connection) {
 			lastSeenBatch = now
 		}
 
+		// Check for JSON-RPC 2.0 batch (array of requests)
+		if len(rawMsg) > 0 && rawMsg[0] == '[' {
+			var batch []JSONRPCRequest
+			if err := json.Unmarshal(rawMsg, &batch); err != nil {
+				conn.Conn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout))
+				_ = encoder.Encode(&JSONRPCResponse{
+					JSONRPC: JSONRPCVersion,
+					Error:   &JSONRPCError{Code: ErrorParseError, Message: "batch parse error: " + err.Error()},
+				})
+				continue
+			}
+			// Set thread-locals for this connection
+			currentElicitFn.Set(conn.ElicitFunc)
+			currentSessionID.Set(conn.Session.ID)
+			currentNotifyFn.Set(notifyFn)
+			responses := make([]*JSONRPCResponse, 0, len(batch))
+			for i := range batch {
+				var r *JSONRPCResponse
+				if s.handleFunc != nil {
+					r = s.handleFunc(conn, &batch[i])
+				} else if s.handler != nil {
+					r = s.handler.HandleRequest(conn, &batch[i])
+				} else {
+					r = &JSONRPCResponse{
+						JSONRPC: JSONRPCVersion,
+						ID:      batch[i].ID,
+						Error:   &JSONRPCError{Code: ErrorInternal, Message: "no handler configured"},
+					}
+				}
+				if r != nil {
+					responses = append(responses, r)
+				}
+			}
+			currentElicitFn.Set(nil)
+			currentSessionID.Set("")
+			currentNotifyFn.Set(nil)
+			if len(responses) > 0 {
+				conn.Conn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout))
+				_ = encoder.Encode(responses)
+			}
+			continue
+		}
+
+		// Single request
+		var req JSONRPCRequest
+		if err := json.Unmarshal(rawMsg, &req); err != nil {
+			conn.Conn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout))
+			_ = encoder.Encode(&JSONRPCResponse{
+				JSONRPC: JSONRPCVersion,
+				Error:   &JSONRPCError{Code: ErrorParseError, Message: "parse error: " + err.Error()},
+			})
+			continue
+		}
+
 		var resp *JSONRPCResponse
-		// Set thread-local elicitation function for this connection
-		// so tool handlers can call ElicitInput() during processing.
+		// Set thread-local elicitation and notification functions for
+		// this connection so tool handlers can call ElicitInput() and
+		// send notifications during processing.
 		currentElicitFn.Set(conn.ElicitFunc)
+		currentSessionID.Set(conn.Session.ID)
+		currentNotifyFn.Set(notifyFn)
 		if s.handleFunc != nil {
 			resp = s.handleFunc(conn, &req)
 		} else if s.handler != nil {
@@ -288,6 +358,8 @@ func (s *Server) handleMCPProtocol(conn *Connection) {
 			}
 		}
 		currentElicitFn.Set(nil)
+		currentSessionID.Set("")
+		currentNotifyFn.Set(nil)
 		// Notifications (no ID) may return nil to skip the response
 		if resp == nil {
 			continue

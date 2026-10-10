@@ -296,6 +296,63 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 	}
 	r.Body.Close()
 
+	// Check for JSON-RPC 2.0 batch (array of requests)
+	if len(body) > 0 && body[0] == '[' {
+		var batch []JSONRPCRequest
+		if err := json.Unmarshal(body, &batch); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("MCP-Protocol-Version", ProtocolVersion)
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(JSONRPCResponse{
+				JSONRPC: JSONRPCVersion,
+				Error:   &JSONRPCError{Code: ErrorParseError, Message: "batch parse error: " + err.Error()},
+			})
+			return
+		}
+		// Process each request through the handler chain
+		responses := make([]*JSONRPCResponse, 0, len(batch))
+		for i := range batch {
+			// Each request needs its own session validation
+			batchReq := &batch[i]
+			isInit := batchReq.Method == "initialize"
+			clientSID := r.Header.Get("Mcp-Session-Id")
+
+			var bconn *Connection
+			if isInit {
+				sess := t.createSession()
+				bconn = sess.conn
+			} else {
+				sess := t.getSession(clientSID)
+				if sess == nil {
+					responses = append(responses, &JSONRPCResponse{
+						JSONRPC: JSONRPCVersion,
+						ID:      batchReq.ID,
+						Error:   &JSONRPCError{Code: ErrorInvalidRequest, Message: "session not found or expired"},
+					})
+					continue
+				}
+				bconn = sess.conn
+				t.touchSession(clientSID)
+			}
+			currentSessionID.Set(bconn.Session.ID)
+			resp := t.handler(bconn, batchReq)
+			currentSessionID.Set("")
+			if resp != nil {
+				responses = append(responses, resp)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("MCP-Protocol-Version", ProtocolVersion)
+		if len(responses) == 0 {
+			// All notifications — no response
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(responses)
+		return
+	}
+
 	// Parse the JSON-RPC request
 	var req JSONRPCRequest
 	if err := json.Unmarshal(body, &req); err != nil {

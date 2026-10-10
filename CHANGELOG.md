@@ -50,6 +50,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   benchmark results, methodology, and reproduction instructions
 - **3 new chain order tests** (`chain_order_test.go`): auth blocks,
   evasion detector wired, evasion stats in `Stats()`
+- **`logging/setLevel` log filtering.** `logging/setLevel` now actually
+  filters server log output via a custom `slog.Handler` wrapper. MCP
+  levels (debug, info, notice, warning, error, critical, alert,
+  emergency) map to slog levels. Thread-safe via RWMutex
+- **`notifications/progress` support.** Tool calls with
+  `_meta.progressToken` now receive periodic `notifications/progress`
+  notifications during long-running execution. Progress delivered via
+  thread-local `currentNotifyFn` (TCP/stdio) or `NotifyCallback` (HTTP)
+- **JSON-RPC 2.0 batch support.** All three transports (TCP, stdio,
+  HTTP) now handle JSON-RPC batch requests (arrays of requests).
+  Responses are collected and returned as an array. All-notification
+  batches produce no response
+- **`roots/list` handler.** Returns empty roots list for compatibility
+  with clients that send it unconditionally, even though we don't
+  advertise the `roots` capability
+- **`currentSessionID` for TCP/stdio.** TCP and stdio transports now
+  set `currentSessionID` before dispatching requests, enabling correct
+  subscription tracking on all transports, not just HTTP
 
 ### Changed
 
