@@ -42,6 +42,9 @@ type SecuredMCPServer struct {
 	// ML inference throttle — rate-limits ML detection to prevent
 	// standalone server from being used as high-throughput ML API.
 	mlThrottle *ml.Throttle
+	// L2.5: Evasion detector — catches encoded/obfuscated content that
+	// bypasses L1 regex scanning. Runs between L1 and L3 in the pipeline.
+	evasionDetector *ml.EvasionDetector
 }
 
 // NewSecuredMCPServer creates a new secured MCP server with all security layers.
@@ -151,24 +154,34 @@ func NewSecuredMCPServer(cfg *ServerConfigV2) (*SecuredMCPServer, error) {
 		handler.ThreatDetector = threatDetector
 	}
 
+	// L2.5: Evasion detector — catches encoded/obfuscated content that
+	// bypasses L1 regex scanning. Pure Go (regex-based), no CGO required.
+	var evasionDetector *ml.EvasionDetector
+	if cfg.EvasionDetection {
+		evasionDetector = ml.NewEvasionDetector()
+		handler.EvasionDetector = evasionDetector
+		slog.Info("evasion detector enabled", "layer", "L2.5")
+	}
+
 	// Guardrails
 	guardrails := NewGuardrailMiddleware(cfg.ToGuardrailConfig(), handler.Registry)
 
 	// Build server
 	srv := &SecuredMCPServer{
-		config:         cfg,
-		handler:        handler,
-		guardrails:     guardrails,
-		scanner:        scanner,
-		authMgr:        authMgr,
-		sigVerifier:    sigVerifier,
-		stdioGuard:     stdioGuard,
-		auditLogger:    auditLogger,
-		sessionMgr:     sessionMgr,
-		rbacMgr:        rbacMgr,
-		policyEngine:   policyEngine,
-		threatDetector: threatDetector,
-		mlThrottle:     mlThrottle,
+		config:          cfg,
+		handler:         handler,
+		guardrails:      guardrails,
+		scanner:         scanner,
+		authMgr:         authMgr,
+		sigVerifier:     sigVerifier,
+		stdioGuard:      stdioGuard,
+		auditLogger:     auditLogger,
+		sessionMgr:      sessionMgr,
+		rbacMgr:         rbacMgr,
+		policyEngine:    policyEngine,
+		threatDetector:  threatDetector,
+		mlThrottle:      mlThrottle,
+		evasionDetector: evasionDetector,
 	}
 
 	// Wire the handler chain: auth → guardrails → response scan → handler
@@ -612,6 +625,7 @@ func (s *SecuredMCPServer) Stats() map[string]interface{} {
 		"trusted_keys":         s.sigVerifier.TrustedKeyCount(),
 		"policy_rules":         s.policyEngine.RuleCount(),
 		"ml_throttle":          s.mlThrottleStatsMap(),
+		"evasion_detection":    s.evasionStatsMap(),
 	}
 }
 
@@ -636,6 +650,20 @@ func (s *SecuredMCPServer) mlThrottleStatsMap() map[string]interface{} {
 		"total_allowed":     ts.TotalAllowed,
 		"total_throttled":   ts.TotalThrottled,
 		"current_in_flight": ts.CurrentInFlight,
+	}
+}
+
+// evasionStatsMap returns evasion detection stats as a map for Stats().
+func (s *SecuredMCPServer) evasionStatsMap() map[string]interface{} {
+	if s.evasionDetector == nil {
+		return nil
+	}
+	stats := s.evasionDetector.GetStats()
+	return map[string]interface{}{
+		"total_scans": stats.TotalScans,
+		"detections":  stats.Detections,
+		"by_category": stats.ByCategory,
+		"by_pattern":  stats.ByPattern,
 	}
 }
 

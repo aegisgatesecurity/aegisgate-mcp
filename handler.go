@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,6 +55,11 @@ type RequestHandler struct {
 	// tool parameters for semantic attacks and evasion variants that
 	// regex cannot detect.
 	ThreatDetector *ml.ThreatDetector
+	// L2.5: Evasion detector — catches encoded/obfuscated content that
+	// bypasses L1 regex scanning. If non-nil, scans tool parameters for
+	// evasion techniques (base64, zero-width chars, leet speak, etc.)
+	// before L1 regex and L3 neural detection.
+	EvasionDetector *ml.EvasionDetector
 	// Tool poisoning scanner: if non-nil, validates tool descriptions
 	// and schemas for prompt injection / exfiltration commands at
 	// registration time (OWASP MCP Top 10: Tool Poisoning).
@@ -297,6 +303,47 @@ func (h *RequestHandler) handleCallTool(ctx context.Context, conn *Connection, r
 						"tool", toolName, "reason", result.Reason)
 					return h.handleToolResult(req.ID,
 						"Parameter blocked by STDIO validation: "+result.Reason, true)
+				}
+			}
+		}
+	}
+
+	// L2.5: Evasion detection — catches encoded/obfuscated content that
+	// bypasses L1 regex scanning. Detects base64 encoding, URL encoding,
+	// unicode escapes, HTML entities, zero-width chars, character
+	// interleaving, word splitting, leet speak, markup injection, and
+	// semantic evasion (role-play framing, instruction override).
+	// High-confidence evasion (score ≥ 0.8) is blocked independently.
+	// Lower scores are logged and left for L1/L3 to handle the content.
+	if h.EvasionDetector != nil {
+		for _, paramValue := range toolParams {
+			if strVal, ok := paramValue.(string); ok && strVal != "" {
+				evasResult := h.EvasionDetector.Detect(strVal)
+				if evasResult.Detected {
+					const evasionBlockThreshold = 0.8
+					if evasResult.Score >= evasionBlockThreshold {
+						patterns := make([]string, 0, len(evasResult.MatchedPatterns))
+						for _, m := range evasResult.MatchedPatterns {
+							patterns = append(patterns, m.Name)
+						}
+						if h.AuditLogger != nil {
+							h.AuditLogger.Log(ctx, &AuditEntry{
+								Type: "evasion_blocked", SessionID: sessionID, AgentID: agentID,
+								ToolName: toolName, Error: fmt.Sprintf(
+									"evasion detected (score: %.2f, patterns: %s)",
+									evasResult.Score, strings.Join(patterns, ", ")),
+							})
+						}
+						slog.Warn("evasion detector blocked input",
+							"tool", toolName, "score", evasResult.Score,
+							"patterns", strings.Join(patterns, ", "))
+						return h.handleToolResult(req.ID,
+							fmt.Sprintf("Parameter blocked by evasion detector (score: %.2f, patterns: %s)",
+								evasResult.Score, strings.Join(patterns, ", ")), true)
+					}
+					// Log lower-confidence evasion for monitoring
+					slog.Info("evasion detected (below threshold)",
+						"tool", toolName, "score", evasResult.Score)
 				}
 			}
 		}
