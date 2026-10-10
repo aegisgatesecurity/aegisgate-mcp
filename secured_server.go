@@ -218,19 +218,34 @@ func (s *SecuredMCPServer) wireHandlerChain() {
 		return s.handler.HandleRequest(conn, req)
 	}
 
+	// Track active layers for startup logging
+	var layers []string
+	layers = append(layers, "core_handler")
+
 	// Wrap with response scanning
 	if s.config.ScanResponses {
 		chain = s.wrapWithResponseScan(chain)
+		layers = append(layers, "response_scan")
 	}
 
 	// Wrap with guardrails
 	chain = s.guardrails.GuardrailHandler(chain)
+	layers = append(layers, "guardrails")
 
 	// Wrap with signature verification
 	chain = s.wrapWithSignatureVerification(chain)
+	layers = append(layers, "signature_verification")
 
 	// Wrap with auth
 	chain = s.authMgr.AuthMiddleware(chain)
+	layers = append(layers, "auth")
+
+	// Log the active security chain (execution order: outermost first)
+	slog.Info("security chain wired",
+		"execution_order", "auth → signature_verification → guardrails → response_scan → core_handler",
+		"layers", len(layers),
+		"evasion_detection", s.evasionDetector != nil,
+		"ml_threat_detection", s.threatDetector != nil)
 
 	// Set on server
 	tlsCfg, err := s.config.BuildTLSConfig()
