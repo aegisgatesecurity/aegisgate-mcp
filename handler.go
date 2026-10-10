@@ -68,6 +68,10 @@ type RequestHandler struct {
 	// notification to connected clients (e.g. tools/list_changed).
 	// If nil, notifications are silently dropped.
 	NotifyCallback NotificationCallback
+	// ElicitationCallback is called when a tool handler needs to request
+	// information from the client via elicitation/create. If nil,
+	// ElicitInput returns an error.
+	ElicitationCallback ElicitationCallback
 	// Subscriptions tracks which sessions are subscribed to which
 	// resource URIs. Key: session ID → set of URIs.
 	subscriptions map[string]map[string]bool
@@ -173,10 +177,11 @@ func (h *RequestHandler) handleInitialize(ctx context.Context, conn *Connection,
 	result := map[string]interface{}{
 		"protocolVersion": ProtocolVersion,
 		"capabilities": map[string]interface{}{
-			"tools":     map[string]interface{}{"listChanged": true},
-			"resources": map[string]interface{}{"listChanged": true, "subscribe": true},
-			"prompts":   map[string]interface{}{"listChanged": true},
-			"logging":   map[string]interface{}{},
+			"tools":       map[string]interface{}{"listChanged": true},
+			"resources":   map[string]interface{}{"listChanged": true, "subscribe": true},
+			"prompts":     map[string]interface{}{"listChanged": true},
+			"logging":     map[string]interface{}{},
+			"elicitation": map[string]interface{}{},
 		},
 		"serverInfo": map[string]interface{}{
 			"name":    "aegisgate-mcp",
@@ -874,6 +879,16 @@ func (h *RequestHandler) NotifyListChanged(resourceType string) {
 	}
 	method := fmt.Sprintf("notifications/%s/list_changed", resourceType)
 	h.NotifyCallback(method, nil)
+}
+
+// ElicitInput sends an elicitation/create request to the client to request
+// information from the user. Returns the user's response or an error if no
+// elicitation callback is wired or the client declines/cancels.
+func (h *RequestHandler) ElicitInput(params *ElicitationParams) (*ElicitationResult, error) {
+	if h.ElicitationCallback == nil {
+		return nil, fmt.Errorf("elicitation not available: no callback wired")
+	}
+	return h.ElicitationCallback(params)
 }
 
 // ============================================================

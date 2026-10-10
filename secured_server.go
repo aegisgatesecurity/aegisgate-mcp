@@ -536,6 +536,24 @@ func (s *SecuredMCPServer) SetNotifyCallback(cb NotificationCallback) {
 	s.handler.NotifyCallback = cb
 }
 
+// SetElicitationCallback sets the elicitation callback. The transport layer
+// calls this to wire elicitation/create requests to the client connection.
+// Tool handlers can then call ElicitInput() to request information from the user.
+func (s *SecuredMCPServer) SetElicitationCallback(cb ElicitationCallback) {
+	s.handler.ElicitationCallback = cb
+}
+
+// ElicitInput sends an elicitation/create request to the client, asking the
+// user for input. The message is displayed to the user, and requestedSchema
+// describes the expected input format (JSON Schema). Returns the user's
+// response or an error if elicitation is not available or the client declines.
+func (s *SecuredMCPServer) ElicitInput(message string, requestedSchema map[string]interface{}) (*ElicitationResult, error) {
+	return s.handler.ElicitInput(&ElicitationParams{
+		Message:         message,
+		RequestedSchema: requestedSchema,
+	})
+}
+
 // prompt injection or exfiltration patterns. Returns a *ToolPoisoningError
 // if suspicious patterns are found, nil otherwise.
 func (s *SecuredMCPServer) ScanToolForPoisoning(name, desc string, inputSchema map[string]interface{}) *ToolPoisoningError {

@@ -5,6 +5,69 @@ All notable changes to AegisGate MCP are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] — 2026-10-10
+
+### Added
+
+- **Evasion Detection (L2.5).** Wired the `EvasionDetector` into the live
+  request pipeline as layer 23, between L1 regex scanning and L3 neural
+  detection. Detects 15 evasion patterns across 4 categories: encoding
+  (base64, URL, unicode, HTML entities), splitting (zero-width chars,
+  interleaving, word splitting), obfuscation (leet speak, CamelCase,
+  padding, markup injection), and semantic evasion (role-play framing,
+  instruction override, context manipulation, output constraint bypass).
+  Score ≥ 0.8 blocks independently; ≥ 0.3 logs warning. Pure Go, no CGO
+  required. Brings security layer count from 22 to 23
+- **`completion/complete` implementation.** Replaced empty stub with
+  functional completion handler per MCP spec 2025-06-18. `ref/prompt`
+  validates prompt and argument existence. `ref/resource` matches partial
+  URI against registered resources and templates, capped at 100 results
+  with `hasMore` flag
+- **Per-session SSE multiplexing.** Changed `sseConns` from single to
+  multiple connections per session. Supports parallel SSE streams and
+  reconnection while old connection is still open. Uses pointer-based
+  connection removal
+- **`Last-Event-ID` reconnection support.** Implements SSE reconnection
+  per spec. Monotonic event IDs, bounded ring buffer (100 events), replay
+  on reconnection. Events include `id:` field for client tracking
+- **Per-tool rate limiting.** `MaxCallsPerToolPerSession` limits total
+  calls to a single tool per session (atomic counter). `ToolRateOverrides`
+  sets per-tool RPM overrides (e.g., `{"exec": 5, "read_file": 120}`)
+- **Elicitation support.** `elicitation` capability advertised in
+  initialize response. `ElicitInput()` and `SetElicitationCallback()`
+  methods on `SecuredMCPServer` allow tool handlers to request information
+  from the client/user via `elicitation/create`
+- **Startup chain validation logging.** `wireHandlerChain()` logs active
+  security chain execution order and layer count at startup
+- **HTTP transport benchmarks.** `BenchmarkHTTPPing` and
+  `BenchmarkMiddlewareChain` added. `BENCHMARKS.md` published with 12
+  benchmark results, methodology, and reproduction instructions
+- **3 new chain order tests** (`chain_order_test.go`): auth blocks,
+  evasion detector wired, evasion stats in `Stats()`
+
+### Changed
+
+- Version bumped from 1.4.2 to 1.5.0
+- `ServerConfigV2`: new `EvasionDetection` (default: `true`),
+  `MaxCallsPerToolPerSession`, `ToolRateOverrides` fields
+- Initialize response now advertises `elicitation` capability
+- `sseConns` type changed from `map[string]*sseConn` to
+  `map[string][]*sseConn` for multiplexing
+- `broadcastNotification()` and `writeSSEResponse()` now assign event IDs
+  and buffer events for replay
+- `server.json`: version 1.5.0, description updated to "23 security layers"
+
+### Performance (CGO_ENABLED=0, 40-core, Go 1.26.9)
+
+- Middleware chain overhead: **13.3μs** per request (negligible vs LLM
+  latency)
+- Auth middleware: **510ns** (sub-microsecond)
+- Content scanning: **1.9μs** (100 chars), **590μs** (500 bytes), linear
+  scaling
+- HTTP transport: **310μs** per request (full HTTP roundtrip)
+- Near-zero allocation hot paths: `ToolsList` (3 allocs),
+  `AuthMiddleware` (2 allocs)
+
 ## [1.4.2] — 2026-10-09
 
 ### Fixed

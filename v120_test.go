@@ -1115,8 +1115,8 @@ func TestSecuredServerRegisterPrompt(t *testing.T) {
 // ============================================================
 
 func TestVersion120(t *testing.T) {
-	if Version != "1.4.2" {
-		t.Errorf("Version = %q, want %q", Version, "1.4.2")
+	if Version != "1.5.0" {
+		t.Errorf("Version = %q, want %q", Version, "1.5.0")
 	}
 }
 
