@@ -318,9 +318,11 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 			clientSID := r.Header.Get("Mcp-Session-Id")
 
 			var bconn *Connection
+			var batchSessionID string
 			if isInit {
 				sess := t.createSession()
 				bconn = sess.conn
+				batchSessionID = sess.id
 			} else {
 				sess := t.getSession(clientSID)
 				if sess == nil {
@@ -332,9 +334,10 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 					continue
 				}
 				bconn = sess.conn
+				batchSessionID = clientSID
 				t.touchSession(clientSID)
 			}
-			currentSessionID.Set(bconn.Session.ID)
+			currentSessionID.Set(batchSessionID)
 			resp := t.handler(bconn, batchReq)
 			currentSessionID.Set("")
 			if resp != nil {
@@ -403,11 +406,13 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 	isInitialize := req.Method == "initialize"
 
 	var conn *Connection
+	var httpSessionID string // key used in t.sessions map
 
 	if isInitialize {
 		// Create a new session for this client
 		sess := t.createSession()
 		conn = sess.conn
+		httpSessionID = sess.id
 	} else {
 		// Validate the session ID
 		sess := t.getSession(clientSessionID)
@@ -417,11 +422,12 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		conn = sess.conn
+		httpSessionID = clientSessionID
 		t.touchSession(clientSessionID)
 	}
 
 	// Set the session ID context for subscription tracking
-	currentSessionID.Set(conn.Session.ID)
+	currentSessionID.Set(httpSessionID)
 	defer func() { currentSessionID.Set("") }()
 
 	// Check if client requests SSE streaming
@@ -433,9 +439,12 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 	// Set common headers
 	w.Header().Set("MCP-Protocol-Version", ProtocolVersion)
 
-	// Always set Mcp-Session-Id on initialize responses
+	// Always set Mcp-Session-Id on initialize responses.
+	// Use httpSessionID (the key in t.sessions) rather than conn.Session.ID,
+	// which may have been changed by the auth middleware's OnAuthSuccess
+	// callback (e.g., to an RBAC session ID).
 	if isInitialize {
-		w.Header().Set("Mcp-Session-Id", conn.Session.ID)
+		w.Header().Set("Mcp-Session-Id", httpSessionID)
 	}
 
 	if wantSSE {

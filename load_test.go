@@ -45,8 +45,8 @@ func startTestServer(t *testing.T, cfg *ServerConfigV2) (*SecuredMCPServer, stri
 	cfg.ScanResponses = false // disable response scanning to avoid false positives
 	cfg.BlockOnPII = false
 	cfg.BlockOnSecrets = false
-	if cfg.MaxSessions == 0 || cfg.MaxSessions == 50 {
-		cfg.MaxSessions = 500 // override default (50) for load testing
+	if cfg.MaxSessions <= 100 {
+		cfg.MaxSessions = 500 // override default (25) for load testing
 	}
 
 	srv, err := NewSecuredMCPServer(cfg)

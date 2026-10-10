@@ -92,10 +92,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Near-zero allocation hot paths: `ToolsList` (3 allocs),
   `AuthMiddleware` (2 allocs)
 
+### Fixed
+
+- **HTTP session ID mismatch with RBAC.** When `OnAuthSuccess` was
+  configured (the default in `NewSecuredMCPServer`), the auth middleware
+  replaced `conn.Session.ID` with an RBAC session ID. The HTTP transport
+  then returned this RBAC ID in the `Mcp-Session-Id` header, but stored
+  the session in its map under the original HTTP session ID. Subsequent
+  requests with the RBAC ID always got "session not found or expired".
+  Fixed by tracking the HTTP session ID separately from `conn.Session.ID`
+  in both the single-request and batch-request paths
+
+### Load Testing
+
+- **Comprehensive k6-style load testing suite** (22 tests, `//go:build load`):
+  - **Stress**: Ramp-up (10→500 connections, 100% success at 738 rps),
+    resource monitor (10 waves × 50 conns × 20 reqs, goroutine leak check)
+  - **Burst**: Connection spike (200 simultaneous), request spike (1000
+    reqs in 79ms = 12,710 rps), recovery (baseline p50 restored in <1s)
+  - **Crush**: Beyond MaxConnections (500 into limit 30), memory pressure
+    (300KB payloads), goroutine explosion (500 connection churn, 0 leak),
+    malformed flood (500 mixed messages, server survives)
+  - **Chaos**: Random drops (100 conns, 30% drop rate), half-sent messages
+    (partial JSON + garbage + abrupt close), shutdown under load (50
+    active generators, graceful in 1.6ms)
+  - **HTTP transport**: Concurrent (50 clients, 2290 rps), sustained (20
+    clients × 30 reqs), burst (200 concurrent), oversized body, auth flood,
+    soak (5s, 0 errors), batch load (20 clients × 10 batch), connection
+    exhaustion (300 concurrent)
+  - **Cross-transport**: TCP vs HTTP latency head-to-head comparison
+  - **FD leak**: 500 connection churn across 5 rounds, ≤1 FD delta
+  - Metrics framework: p50/p90/p99 latencies, goroutine count, heap
+    growth, GC cycles, throughput, error rate — formatted report per test
+
 ## [1.4.2] — 2026-10-09
 
 ### Fixed
-
 - **SSE connections killed after 60 seconds.** The HTTP server's
   `WriteTimeout` was 60s, which silently terminated long-lived SSE
   connections after one minute — breaking server-initiated notification
