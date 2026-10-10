@@ -612,14 +612,142 @@ func (h *RequestHandler) handleSetLogLevel(req *JSONRPCRequest) *JSONRPCResponse
 // ============================================================
 
 func (h *RequestHandler) handleComplete(req *JSONRPCRequest) *JSONRPCResponse {
-	// Completion is optional. Return empty completions.
-	return h.handleSuccess(req.ID, map[string]interface{}{
+	// Parse completion request per MCP spec 2025-06-18:
+	//   ref: { type: "ref/prompt"|"ref/resource", name/uri: ... }
+	//   argument: { name: string, value: string (partial) }
+	var params struct {
+		Ref struct {
+			Type string `json:"type"`
+			Name string `json:"name"` // for ref/prompt
+			URI  string `json:"uri"`  // for ref/resource
+		} `json:"ref"`
+		Argument struct {
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		} `json:"argument"`
+	}
+	if req.Params != nil {
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return h.handleError(req.ID, ErrorInvalidParams, "invalid params: "+err.Error())
+		}
+	}
+
+	// If no ref type specified, return empty completions (backward compatible)
+	if params.Ref.Type == "" {
+		return h.handleSuccess(req.ID, emptyCompletion())
+	}
+
+	switch params.Ref.Type {
+	case "ref/prompt":
+		return h.handlePromptCompletion(req.ID, params.Ref.Name, params.Argument.Name, params.Argument.Value)
+	case "ref/resource":
+		return h.handleResourceCompletion(req.ID, params.Ref.URI, params.Argument.Value)
+	default:
+		return h.handleError(req.ID, ErrorInvalidParams, "unknown ref type: "+params.Ref.Type)
+	}
+}
+
+// handlePromptCompletion completes prompt argument values.
+// Validates that the prompt and argument exist, then returns completions.
+func (h *RequestHandler) handlePromptCompletion(id interface{}, promptName, argName, argValue string) *JSONRPCResponse {
+	if h.PromptReg == nil {
+		return h.handleSuccess(id, emptyCompletion())
+	}
+
+	// Validate prompt exists
+	prompts := h.PromptReg.List()
+	var prompt *Prompt
+	for i := range prompts {
+		if prompts[i].Name == promptName {
+			prompt = &prompts[i]
+			break
+		}
+	}
+	if prompt == nil {
+		return h.handleError(id, ErrorInvalidParams, "prompt not found: "+promptName)
+	}
+
+	// Validate argument exists in prompt definition
+	argFound := false
+	for _, arg := range prompt.Arguments {
+		if arg.Name == argName {
+			argFound = true
+			break
+		}
+	}
+	if !argFound {
+		return h.handleError(id, ErrorInvalidParams,
+			fmt.Sprintf("argument %q not defined for prompt %q", argName, promptName))
+	}
+
+	// No completion provider mechanism yet — return empty completions.
+	// Future: prompt handlers could optionally provide a CompletionFunc.
+	return h.handleSuccess(id, emptyCompletion())
+}
+
+// handleResourceCompletion completes resource URIs by matching the
+// partial value against registered resources and templates.
+func (h *RequestHandler) handleResourceCompletion(id interface{}, refURI, partialValue string) *JSONRPCResponse {
+	if h.ResourceReg == nil {
+		return h.handleSuccess(id, emptyCompletion())
+	}
+
+	var values []interface{}
+
+	// Match against registered resource URIs
+	for _, res := range h.ResourceReg.List() {
+		if strings.HasPrefix(res.URI, partialValue) {
+			values = append(values, res.URI)
+		}
+	}
+
+	// Match against resource templates
+	for _, tmpl := range h.ResourceReg.ListTemplates() {
+		// For templates, check if the partial value is a prefix of a
+		// possible expansion. Simple heuristic: if the template starts
+		// with the partial value's prefix, include it.
+		templatePrefix := templatePrefix(tmpl.URITemplate)
+		if strings.HasPrefix(templatePrefix, partialValue) || strings.HasPrefix(partialValue, templatePrefix) {
+			values = append(values, tmpl.URITemplate)
+		}
+	}
+
+	total := len(values)
+	hasMore := false
+	// Cap at 100 completions
+	if total > 100 {
+		values = values[:100]
+		hasMore = true
+	}
+
+	return h.handleSuccess(id, map[string]interface{}{
+		"completion": map[string]interface{}{
+			"values":  values,
+			"total":   total,
+			"hasMore": hasMore,
+		},
+	})
+}
+
+// emptyCompletion returns the standard empty completion response.
+func emptyCompletion() map[string]interface{} {
+	return map[string]interface{}{
 		"completion": map[string]interface{}{
 			"values":  []interface{}{},
 			"total":   0,
 			"hasMore": false,
 		},
-	})
+	}
+}
+
+// templatePrefix extracts the static prefix of a URI template
+// (everything before the first { variable }).
+func templatePrefix(uriTemplate string) string {
+	idx := strings.Index(uriTemplate, "{")
+	if idx < 0 {
+		return uriTemplate
+	}
+	return uriTemplate[:idx]
 }
 
 func (h *RequestHandler) handleSuccess(id interface{}, result interface{}) *JSONRPCResponse {
