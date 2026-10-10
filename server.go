@@ -31,6 +31,13 @@ type Connection struct {
 	ClientInfo *ClientInfo
 	AgentID    string
 	mu         sync.RWMutex // protects Session, ClientInfo, AgentID (infrequent writes)
+
+	// ElicitFunc, when set by the transport, enables synchronous
+	// elicitation/create for this connection. Tool handlers call
+	// ElicitInput() which uses this function to send an elicitation
+	// request to the client and wait for the response. If nil,
+	// elicitation is not available for this connection.
+	ElicitFunc func(*ElicitationParams) (*ElicitationResult, error)
 }
 
 // GetLastSeen returns the last time this connection received a message.
@@ -205,6 +212,37 @@ func (s *Server) handleMCPProtocol(conn *Connection) {
 	decoder := json.NewDecoder(io.LimitReader(conn.Conn, 1<<20))
 	encoder := json.NewEncoder(conn.Conn)
 
+	// Set up elicitation for this connection: the tool handler can call
+	// ElicitInput() to synchronously send an elicitation/create request
+	// to the client and read the response. This works because the read
+	// loop is blocked inside the tool handler, so no one else is reading
+	// from the connection.
+	elicitReg := NewElicitationRegistry(0)
+	conn.ElicitFunc = func(params *ElicitationParams) (*ElicitationResult, error) {
+		reqID, _ := elicitReg.register()
+		elicitReq := buildElicitationRequest(reqID, params)
+		conn.Conn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout))
+		if err := encoder.Encode(elicitReq); err != nil {
+			elicitReg.cancel(reqID)
+			return nil, fmt.Errorf("elicitation: failed to send request: %w", err)
+		}
+		// Read the response directly — the read loop is blocked in the
+		// tool handler, so it's safe to read from the decoder here.
+		conn.Conn.SetReadDeadline(time.Now().Add(DefaultElicitationTimeout))
+		var resp JSONRPCResponse
+		if err := decoder.Decode(&resp); err != nil {
+			elicitReg.cancel(reqID)
+			return nil, fmt.Errorf("elicitation: failed to read response: %w", err)
+		}
+		result, err := parseElicitationResponse(&resp)
+		if err != nil {
+			elicitReg.cancel(reqID)
+			return nil, err
+		}
+		elicitReg.resolve(reqID, elicitationResponse{result: result})
+		return result, nil
+	}
+
 	// Batch LastSeen updates — only update every 5 seconds, not on every message.
 	// This avoids lock contention on the hot path while still providing accurate
 	// idle timeout detection.
@@ -235,6 +273,9 @@ func (s *Server) handleMCPProtocol(conn *Connection) {
 		}
 
 		var resp *JSONRPCResponse
+		// Set thread-local elicitation function for this connection
+		// so tool handlers can call ElicitInput() during processing.
+		currentElicitFn.Set(conn.ElicitFunc)
 		if s.handleFunc != nil {
 			resp = s.handleFunc(conn, &req)
 		} else if s.handler != nil {
@@ -246,6 +287,7 @@ func (s *Server) handleMCPProtocol(conn *Connection) {
 				Error:   &JSONRPCError{Code: ErrorInternal, Message: "no handler configured"},
 			}
 		}
+		currentElicitFn.Set(nil)
 		// Notifications (no ID) may return nil to skip the response
 		if resp == nil {
 			continue

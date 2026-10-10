@@ -40,6 +40,30 @@ func (s *sessionIDContext) Get() string {
 	return s.val
 }
 
+// currentElicitFn is a thread-local elicitation function set by the TCP and
+// stdio transports before invoking the handler. The ElicitInput method checks
+// this first, allowing per-connection synchronous elicitation without modifying
+// the shared ElicitationCallback. The HTTP transport uses the shared callback
+// with currentSessionID for session correlation.
+var currentElicitFn elicitFnContext
+
+type elicitFnContext struct {
+	val func(*ElicitationParams) (*ElicitationResult, error)
+	mu  sync.RWMutex
+}
+
+func (e *elicitFnContext) Set(fn func(*ElicitationParams) (*ElicitationResult, error)) {
+	e.mu.Lock()
+	e.val = fn
+	e.mu.Unlock()
+}
+
+func (e *elicitFnContext) Get() func(*ElicitationParams) (*ElicitationResult, error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.val
+}
+
 // RequestHandler handles MCP protocol requests.
 type RequestHandler struct {
 	Authorizer     ToolAuthorizer
@@ -885,6 +909,10 @@ func (h *RequestHandler) NotifyListChanged(resourceType string) {
 // information from the user. Returns the user's response or an error if no
 // elicitation callback is wired or the client declines/cancels.
 func (h *RequestHandler) ElicitInput(params *ElicitationParams) (*ElicitationResult, error) {
+	// Check thread-local first (TCP/stdio transport sets per-connection)
+	if fn := currentElicitFn.Get(); fn != nil {
+		return fn(params)
+	}
 	if h.ElicitationCallback == nil {
 		return nil, fmt.Errorf("elicitation not available: no callback wired")
 	}

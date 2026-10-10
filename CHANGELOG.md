@@ -36,7 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Elicitation support.** `elicitation` capability advertised in
   initialize response. `ElicitInput()` and `SetElicitationCallback()`
   methods on `SecuredMCPServer` allow tool handlers to request information
-  from the client/user via `elicitation/create`
+  from the client/user via `elicitation/create`. Fully wired across all
+  three transports: HTTP/SSE (async correlation via pending request
+  registry, response arrives as separate POST), TCP (synchronous
+  request-response on bidirectional connection), and stdio (same
+  synchronous pattern via stdin/stdout pipes). `ElicitationRegistry`
+  manages pending requests with 30s default timeout, monotonic IDs,
+  and concurrent-safe resolution
 - **Startup chain validation logging.** `wireHandlerChain()` logs active
   security chain execution order and layer count at startup
 - **HTTP transport benchmarks.** `BenchmarkHTTPPing` and

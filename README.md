@@ -12,7 +12,7 @@ Apache 2.0 · 23 security layers · 30 regex patterns + CharCNN-BiLSTM (v13) ML 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Go](https://img.shields.io/badge/Go-1.26.9-00ADD8?logo=go)](https://golang.org/)
 [![Version](https://img.shields.io/badge/Version-1.4.2-blue.svg)](#changelog)
-[![Coverage](https://img.shields.io/badge/Coverage-92.6%25-brightgreen.svg)](#test-coverage)
+[![Coverage](https://img.shields.io/badge/Coverage-91.1%25-brightgreen.svg)](#test-coverage)
 [![Dependencies](https://img.shields.io/badge/Dependencies-Zero-success.svg)](#overview)
 [![Docker](https://img.shields.io/badge/Docker-DebianSlim--135MB-blue.svg)](#docker)
 [![ML](https://img.shields.io/badge/ML-CharCNN--BiLSTM_v13-purple.svg)](#ml-threat-detection-l3)
@@ -91,7 +91,7 @@ dependencies so it can run air-gapped.
 | **Docker image** | `debian:bookworm-slim`, ~135 MB (ML-enabled) or ~8 MB (heuristic-only) |
 | **Architectures** | amd64, arm64 |
 | **ML model** | CharCNN-BiLSTM v13, 1.6M params, <1ms CPU inference |
-| **Tests** | 498 tests, 12 benchmarks, 3 fuzz targets, 92.2% coverage (non-CGO) / 92.6% (CGO) |
+| **Tests** | 521 tests, 14 benchmarks, 3 fuzz targets, 90.7% coverage (non-CGO) / 91.1% (CGO) |
 
 ---
 
@@ -526,8 +526,8 @@ with unsigned clients while enforcing signatures for clients that provide them.
 
 | Category | Tests | Coverage |
 |----------|-------|----------|
-| Unit + integration (non-CGO) | 498 | 92.2% |
-| Unit + integration (CGO + ML) | 502 | 92.6% |
+| Unit + integration (non-CGO) | 521 | 90.7% |
+| Unit + integration (CGO + ML) | 525 | 91.1% |
 | Load / break / soak (build tag: `load`) | 9 | — |
 | Benchmarks | 10 | — |
 | Fuzz targets | 3 | — |

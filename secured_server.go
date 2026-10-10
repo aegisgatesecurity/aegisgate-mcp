@@ -805,6 +805,18 @@ func ServeWithOptions(cfg *ServerConfigV2, opts *ServeOptions) error {
 		// connections via the transport's broadcast mechanism.
 		srv.SetNotifyCallback(transport.broadcastNotification)
 
+		// Wire the elicitation callback so tool handlers can call
+		// ElicitInput() to request information from the client via
+		// elicitation/create sent over the SSE connection.
+		srv.SetElicitationCallback(func(params *ElicitationParams) (*ElicitationResult, error) {
+			// Get the current session ID from the thread-local context
+			sid := currentSessionID.Get()
+			if sid == "" {
+				return nil, fmt.Errorf("elicitation not available: no active session")
+			}
+			return transport.sendElicitation(sid, params)
+		})
+
 		if err := transport.start(ctx); err != nil {
 			return err
 		}

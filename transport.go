@@ -103,7 +103,39 @@ func (t *stdioTransport) readLoop(ctx context.Context) error {
 		}
 		t.conn.SetLastSeen(time.Now())
 
+		// Set thread-local elicitation function for this connection.
+		// Tool handlers can call ElicitInput() to synchronously send
+		// an elicitation/create request and read the response.
+		if t.conn.ElicitFunc == nil {
+			elicitReg := NewElicitationRegistry(0)
+			t.conn.ElicitFunc = func(params *ElicitationParams) (*ElicitationResult, error) {
+				reqID, _ := elicitReg.register()
+				elicitReq := buildElicitationRequest(reqID, params)
+				t.mu.Lock()
+				if err := t.encoder.Encode(elicitReq); err != nil {
+					t.mu.Unlock()
+					elicitReg.cancel(reqID)
+					return nil, fmt.Errorf("elicitation: failed to send request: %w", err)
+				}
+				t.mu.Unlock()
+				var resp JSONRPCResponse
+				if err := t.decoder.Decode(&resp); err != nil {
+					elicitReg.cancel(reqID)
+					return nil, fmt.Errorf("elicitation: failed to read response: %w", err)
+				}
+				result, err := parseElicitationResponse(&resp)
+				if err != nil {
+					elicitReg.cancel(reqID)
+					return nil, err
+				}
+				elicitReg.resolve(reqID, elicitationResponse{result: result})
+				return result, nil
+			}
+		}
+
+		currentElicitFn.Set(t.conn.ElicitFunc)
 		resp := t.handler(t.conn, &req)
+		currentElicitFn.Set(nil)
 		// Notifications (no ID) may return nil to skip the response
 		if resp == nil {
 			continue

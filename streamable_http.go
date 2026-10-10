@@ -61,6 +61,10 @@ type streamableHTTPTransport struct {
 	// old connection is still timing out.
 	sseConns  map[string][]*sseConn // session ID → active SSE connections
 	sseConnMu sync.RWMutex
+
+	// Elicitation registry for correlating elicitation/create requests
+	// with client responses. Set via setElicitationRegistry.
+	elicitReg *ElicitationRegistry
 }
 
 // sseConn wraps an active SSE connection for notification delivery.
@@ -133,10 +137,11 @@ func (s *httpSession) replayEvents(lastEventID int64) []bufferedEvent {
 // newStreamableHTTPTransport creates a new Streamable HTTP transport.
 func newStreamableHTTPTransport(addr string, handler HandlerFunc) *streamableHTTPTransport {
 	t := &streamableHTTPTransport{
-		handler:  handler,
-		addr:     addr,
-		sessions: make(map[string]*httpSession),
-		sseConns: make(map[string][]*sseConn),
+		handler:   handler,
+		addr:      addr,
+		sessions:  make(map[string]*httpSession),
+		sseConns:  make(map[string][]*sseConn),
+		elicitReg: NewElicitationRegistry(0),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mcp", t.handleMCP)
@@ -301,6 +306,36 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 			JSONRPC: JSONRPCVersion,
 			Error:   &JSONRPCError{Code: ErrorParseError, Message: "parse error: " + err.Error()},
 		})
+		return
+	}
+
+	// Check if this is an elicitation response from the client.
+	// When the server sends an elicitation/create request via SSE,
+	// the client responds with a JSON-RPC response (has result/error
+	// but no method). We detect this by checking if the ID matches
+	// a pending elicitation request.
+	if req.Method == "" && t.elicitReg != nil && t.elicitReg.isElicitationResponse(req.ID) {
+		// This is an elicitation response — deliver it to the pending
+		// request and return 202 Accepted (no body needed).
+		resp := &JSONRPCResponse{
+			JSONRPC: JSONRPCVersion,
+			ID:      req.ID,
+		}
+		// Re-marshal the body to extract result/error fields
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(body, &raw); err == nil {
+			if r, ok := raw["result"]; ok {
+				resp.Result = json.RawMessage(r)
+			}
+			if e, ok := raw["error"]; ok {
+				var jerr JSONRPCError
+				if json.Unmarshal(e, &jerr) == nil {
+					resp.Error = &jerr
+				}
+			}
+		}
+		t.elicitReg.handleElicitationResponse(resp)
+		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 
@@ -559,6 +594,63 @@ func (t *streamableHTTPTransport) broadcastNotification(method string, params in
 			slog.Debug("delivered notification via SSE", "session_id", sessionID, "method", method, "event_id", eventID)
 		}
 	}
+}
+
+// sendElicitation sends an elicitation/create request to the client via
+// the SSE connection for the given session. It registers a pending request
+// in the elicitation registry and blocks until the client responds or the
+// timeout expires. This is the ElicitationCallback wired to the handler.
+func (t *streamableHTTPTransport) sendElicitation(sessionID string, params *ElicitationParams) (*ElicitationResult, error) {
+	if t.elicitReg == nil {
+		return nil, fmt.Errorf("elicitation not available: no registry")
+	}
+
+	// Register the pending request
+	reqID, ch := t.elicitReg.register()
+
+	// Build the elicitation/create JSON-RPC request
+	elicitReq := buildElicitationRequest(reqID, params)
+	data, err := json.Marshal(elicitReq)
+	if err != nil {
+		t.elicitReg.cancel(reqID)
+		return nil, fmt.Errorf("elicitation: failed to marshal request: %w", err)
+	}
+
+	// Send the request via the client's SSE connection.
+	// We need to find the active SSE connection for this session.
+	t.sseConnMu.RLock()
+	conns := t.sseConns[sessionID]
+	t.sseConnMu.RUnlock()
+
+	if len(conns) == 0 {
+		t.elicitReg.cancel(reqID)
+		return nil, fmt.Errorf("elicitation not available: no active SSE connection for session %s", sessionID)
+	}
+
+	// Assign event ID and buffer for replay support
+	sess := t.getSession(sessionID)
+	var eventID int64
+	if sess != nil {
+		eventID = sess.nextEventID()
+		sess.bufferEvent(eventID, data)
+	}
+
+	// Send to the first available SSE connection for this session
+	conns[0].mu.Lock()
+	if _, err := fmt.Fprintf(conns[0].w, "id: %d\ndata: %s\n\n", eventID, data); err != nil {
+		conns[0].mu.Unlock()
+		t.elicitReg.cancel(reqID)
+		return nil, fmt.Errorf("elicitation: failed to send via SSE: %w", err)
+	}
+	if conns[0].canFlush {
+		conns[0].flusher.Flush()
+	}
+	conns[0].mu.Unlock()
+
+	slog.Debug("sent elicitation/create via SSE", "session_id", sessionID, "request_id", reqID)
+
+	// Block until the client responds or timeout
+	return t.elicitReg.waitForResponse(reqID, ch, 0)
 }
 
 // startStreamableHTTPListener is a test helper that starts the listener
