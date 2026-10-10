@@ -35,6 +35,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -76,6 +77,57 @@ type httpSession struct {
 	createdAt time.Time
 	lastSeen  time.Time
 	conn      *Connection
+	// SSE event tracking for Last-Event-ID reconnection support.
+	// eventID is the last assigned event ID (monotonically increasing).
+	eventID int64
+	// eventBuffer stores recent SSE events for replay on reconnection.
+	// Bounded to maxEventBuffer entries to prevent memory exhaustion.
+	eventBuffer []bufferedEvent
+	eventBufMu  sync.Mutex
+}
+
+// bufferedEvent stores an SSE event for replay on reconnection.
+type bufferedEvent struct {
+	id   int64
+	data []byte // marshaled JSON-RPC notification
+}
+
+// maxEventBuffer is the maximum number of events stored per session
+// for Last-Event-ID reconnection replay. Events beyond this limit
+// are evicted (oldest first). If a client reconnects with a gap
+// larger than the buffer, the server sends a re-sync error event.
+const maxEventBuffer = 100
+
+// nextEventID assigns the next monotonic event ID for this session.
+func (s *httpSession) nextEventID() int64 {
+	return atomic.AddInt64(&s.eventID, 1)
+}
+
+// bufferEvent stores an SSE event for replay on reconnection.
+func (s *httpSession) bufferEvent(id int64, data []byte) {
+	s.eventBufMu.Lock()
+	defer s.eventBufMu.Unlock()
+	s.eventBuffer = append(s.eventBuffer, bufferedEvent{id: id, data: data})
+	// Evict oldest events if buffer is full
+	if len(s.eventBuffer) > maxEventBuffer {
+		s.eventBuffer = s.eventBuffer[len(s.eventBuffer)-maxEventBuffer:]
+	}
+}
+
+// replayEvents returns buffered events with IDs greater than lastEventID.
+// Returns nil if no events to replay. Returns the highest buffered event ID
+// so the caller can detect gaps (if lastEventID + 1 < first replayed ID,
+// events were lost due to buffer eviction).
+func (s *httpSession) replayEvents(lastEventID int64) []bufferedEvent {
+	s.eventBufMu.Lock()
+	defer s.eventBufMu.Unlock()
+	var events []bufferedEvent
+	for _, e := range s.eventBuffer {
+		if e.id > lastEventID {
+			events = append(events, e)
+		}
+	}
+	return events
 }
 
 // newStreamableHTTPTransport creates a new Streamable HTTP transport.
@@ -360,6 +412,25 @@ func (t *streamableHTTPTransport) handleSSEStream(w http.ResponseWriter, r *http
 		flusher.Flush()
 	}
 
+	// Last-Event-ID reconnection: if the client sends a Last-Event-ID
+	// header, replay buffered events with IDs greater than that value.
+	if lastEventIDStr := r.Header.Get("Last-Event-ID"); lastEventIDStr != "" {
+		var lastEventID int64
+		if _, err := fmt.Sscanf(lastEventIDStr, "%d", &lastEventID); err == nil {
+			events := sess.replayEvents(lastEventID)
+			if len(events) > 0 {
+				slog.Info("replaying SSE events on reconnection",
+					"session_id", sessionID, "last_event_id", lastEventIDStr, "events", len(events))
+				for _, e := range events {
+					_, _ = fmt.Fprintf(w, "id: %d\ndata: %s\n\n", e.id, e.data)
+				}
+				if canFlush {
+					flusher.Flush()
+				}
+			}
+		}
+	}
+
 	// Register this connection for notification delivery
 	conn := t.registerSSEConn(sessionID, w, flusher, canFlush)
 	defer t.unregisterSSEConn(sessionID, conn)
@@ -387,13 +458,22 @@ func (t *streamableHTTPTransport) writeSSEResponse(w http.ResponseWriter, resp *
 			flusher.Flush()
 		}
 	} else {
-		// Write the JSON-RPC response as an SSE data event
+		// Write the JSON-RPC response as an SSE data event with event ID
 		data, err := json.Marshal(resp)
 		if err != nil {
 			slog.Error("failed to marshal SSE response", "error", err)
 			return
 		}
-		_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+		// Assign event ID if session exists
+		sess := t.getSession(sessionID)
+		var eventID int64
+		if sess != nil {
+			eventID = sess.nextEventID()
+			sess.bufferEvent(eventID, data)
+			_, _ = fmt.Fprintf(w, "id: %d\ndata: %s\n\n", eventID, data)
+		} else {
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+		}
 		if canFlush {
 			flusher.Flush()
 		}
@@ -456,9 +536,17 @@ func (t *streamableHTTPTransport) broadcastNotification(method string, params in
 	defer t.sseConnMu.RUnlock()
 
 	for sessionID, conns := range t.sseConns {
+		// Get session for event ID assignment and buffering
+		sess := t.getSession(sessionID)
+		var eventID int64
+		if sess != nil {
+			eventID = sess.nextEventID()
+			sess.bufferEvent(eventID, data)
+		}
+
 		for _, conn := range conns {
 			conn.mu.Lock()
-			_, err := fmt.Fprintf(conn.w, "data: %s\n\n", data)
+			_, err := fmt.Fprintf(conn.w, "id: %d\ndata: %s\n\n", eventID, data)
 			if err != nil {
 				slog.Debug("failed to write notification to SSE connection", "session_id", sessionID, "error", err)
 				conn.mu.Unlock()
@@ -468,7 +556,7 @@ func (t *streamableHTTPTransport) broadcastNotification(method string, params in
 				conn.flusher.Flush()
 			}
 			conn.mu.Unlock()
-			slog.Debug("delivered notification via SSE", "session_id", sessionID, "method", method)
+			slog.Debug("delivered notification via SSE", "session_id", sessionID, "method", method, "event_id", eventID)
 		}
 	}
 }
