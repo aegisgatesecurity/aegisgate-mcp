@@ -16,8 +16,16 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"testing"
+	"time"
 )
+
+// fastNano returns the current monotonic time in nanoseconds. Uses
+// time.Now().UnixNano() for portability across all platforms.
+func fastNano() int64 {
+	return time.Now().UnixNano()
+}
 
 // ============================================================
 // BenchmarkHandleRequest — core request dispatch
@@ -338,4 +346,126 @@ func BenchmarkMiddlewareChain(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		srv.handler.HandleRequest(conn, req)
 	}
+}
+
+// ============================================================
+// Concurrent Throughput — RunParallel
+// ============================================================
+
+// BenchmarkMiddlewareChainParallel measures throughput under concurrent
+// load using b.RunParallel. Each goroutine creates its own Connection
+// and issues tools/call requests through the full middleware chain.
+// This reveals contention on shared resources (audit log, rate limiter,
+// scanner pool) that the single-goroutine benchmark cannot detect.
+//
+// Throughput = b.N / elapsed, reported via b.ReportMetric as ops/sec.
+func BenchmarkMiddlewareChainParallel(b *testing.B) {
+	cfg := DefaultServerConfig()
+	cfg.Address = "127.0.0.1:0"
+	cfg.AuthToken = "bench-token"
+	cfg.DemoTools = true
+	cfg.ScanResponses = true
+	cfg.BlockOnPII = false
+	cfg.BlockOnSecrets = false
+	cfg.RateLimitRPM = 0 // disable rate limiting for pure throughput
+
+	srv, err := NewSecuredMCPServer(cfg)
+	if err != nil {
+		b.Fatalf("NewSecuredMCPServer: %v", err)
+	}
+	defer srv.Stop()
+
+	params, _ := json.Marshal(map[string]interface{}{
+		"name":      "ping",
+		"arguments": map[string]interface{}{},
+	})
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		// Each goroutine gets its own connection to avoid false sharing
+		conn := &Connection{
+			ID:      "parallel",
+			Session: &Session{ID: "parallel"},
+		}
+		req := &JSONRPCRequest{
+			JSONRPC: JSONRPCVersion,
+			Method:  "tools/call",
+			Params:  params,
+			ID:      1,
+		}
+		for pb.Next() {
+			srv.handler.HandleRequest(conn, req)
+		}
+	})
+}
+
+// ============================================================
+// Latency Percentiles — p50 / p99
+// ============================================================
+
+// BenchmarkMiddlewareChainLatency measures per-request latency through
+// the full middleware chain and reports p50, p99, min, and max via
+// b.ReportMetric. Unlike the load_test.go suite (gated behind
+// -tags=load), this runs as a standard benchmark in CI.
+//
+// Metrics reported:
+//   - p50_ns: median latency in nanoseconds
+//   - p99_ns: 99th percentile latency in nanoseconds
+//   - min_ns: minimum latency
+//   - max_ns: maximum latency
+func BenchmarkMiddlewareChainLatency(b *testing.B) {
+	cfg := DefaultServerConfig()
+	cfg.Address = "127.0.0.1:0"
+	cfg.AuthToken = "bench-token"
+	cfg.DemoTools = true
+	cfg.ScanResponses = true
+	cfg.BlockOnPII = false
+	cfg.BlockOnSecrets = false
+
+	srv, err := NewSecuredMCPServer(cfg)
+	if err != nil {
+		b.Fatalf("NewSecuredMCPServer: %v", err)
+	}
+	defer srv.Stop()
+
+	conn := &Connection{ID: "latency", Session: &Session{ID: "latency"}}
+	params, _ := json.Marshal(map[string]interface{}{
+		"name":      "ping",
+		"arguments": map[string]interface{}{},
+	})
+	req := &JSONRPCRequest{
+		JSONRPC: JSONRPCVersion, Method: "tools/call", Params: params, ID: 1,
+	}
+
+	// Warm up to stabilize caches
+	for i := 0; i < 100; i++ {
+		srv.handler.HandleRequest(conn, req)
+	}
+
+	latencies := make([]int64, b.N)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		start := fastNano()
+		srv.handler.HandleRequest(conn, req)
+		latencies[i] = fastNano() - start
+	}
+	b.StopTimer()
+
+	// Sort a copy to compute percentiles
+	sorted := make([]int64, len(latencies))
+	copy(sorted, latencies)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+
+	p50 := sorted[len(sorted)/2]
+	p99 := sorted[(len(sorted)*99)/100]
+	minLat := sorted[0]
+	maxLat := sorted[len(sorted)-1]
+
+	b.ReportMetric(float64(p50), "p50_ns")
+	b.ReportMetric(float64(p99), "p99_ns")
+	b.ReportMetric(float64(minLat), "min_ns")
+	b.ReportMetric(float64(maxLat), "max_ns")
 }
