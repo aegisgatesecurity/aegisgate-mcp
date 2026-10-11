@@ -11,7 +11,7 @@ Apache 2.0 · 23 security layers · 30 regex patterns + CharCNN-BiLSTM (v13) ML 
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Go](https://img.shields.io/badge/Go-1.26.9-00ADD8?logo=go)](https://golang.org/)
-[![Version](https://img.shields.io/badge/Version-1.5.0-blue.svg)](#changelog)
+[![Version](https://img.shields.io/badge/Version-1.5.1-blue.svg)](#changelog)
 [![Coverage](https://img.shields.io/badge/Coverage-92.0%25-brightgreen.svg)](#test-coverage)
 [![Dependencies](https://img.shields.io/badge/Dependencies-Zero-success.svg)](#overview)
 [![Docker](https://img.shields.io/badge/Docker-DebianSlim--135MB-blue.svg)](#docker)
@@ -84,7 +84,7 @@ dependencies so it can run air-gapped.
 
 | | |
 |---|---|
-| **Version** | 1.5.0 |
+| **Version** | 1.5.1 |
 | **License** | Apache-2.0 |
 | **Go version** | 1.26+ |
 | **Module deps** | Zero (no `require` directives — all third-party code vendored) |
