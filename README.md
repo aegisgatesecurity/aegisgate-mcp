@@ -14,7 +14,7 @@ Apache 2.0 · 23 security layers · 30 regex patterns + CharCNN-BiLSTM (v13) ML 
 [![Version](https://img.shields.io/badge/Version-1.5.1-blue.svg)](#changelog)
 [![Coverage](https://img.shields.io/badge/Coverage-92.0%25-brightgreen.svg)](#test-coverage)
 [![Dependencies](https://img.shields.io/badge/Dependencies-Zero-success.svg)](#overview)
-[![Docker](https://img.shields.io/badge/Docker-DebianSlim--135MB-blue.svg)](#docker)
+[![Docker](https://img.shields.io/badge/Docker-Distroless+Hardened-0_CVEs-blue.svg)](#docker)
 [![ML](https://img.shields.io/badge/ML-CharCNN--BiLSTM_v13-purple.svg)](#ml-threat-detection-l3)
 [![Arch](https://img.shields.io/badge/Arch-amd64%20%7C%20arm64-orange.svg)](#build)
 [![CI](https://github.com/aegisgatesecurity/aegisgate-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/aegisgatesecurity/aegisgate-mcp/actions/workflows/ci.yml)
@@ -88,7 +88,7 @@ dependencies so it can run air-gapped.
 | **License** | Apache-2.0 |
 | **Go version** | 1.26+ |
 | **Module deps** | Zero (no `require` directives — all third-party code vendored) |
-| **Docker image** | `debian:bookworm-slim`, ~135 MB (ML-enabled) or ~8 MB (heuristic-only) |
+| **Docker image** | ML: `debian:bookworm-slim` (gnutls purged), ~127 MB, 0 CVEs · Lite: `distroless/static-debian12`, ~10 MB, 0 CVEs |
 | **Architectures** | amd64, arm64 |
 | **ML model** | CharCNN-BiLSTM v13, 1.6M params, <1ms CPU inference |
 | **Tests** | 611 unit/integration + 32 load/stress = 643 total, 14 benchmarks, 3 fuzz targets, 92.0% coverage (non-CGO) / 91.9% (CGO) |
@@ -131,8 +131,8 @@ go build -o mcp-server ./cmd/mcp-server
 ### Docker
 
 ```bash
-# Build and run (ML-enabled, ~135 MB)
-docker build -t aegisgate-mcp .
+# Build and run (ML-enabled, ~127 MB, 0 CVEs)
+docker build --target ml -t aegisgate-mcp .
 docker run -p 8081:8081 aegisgate-mcp --demo
 
 # With authentication and audit logging
@@ -141,15 +141,18 @@ docker run -p 8081:8081 \
   -e MCP_DEMO_TOOLS=true \
   aegisgate-mcp
 
-# Heuristic-only build (no CGO, ~8 MB)
-docker build --build-arg CGO_ENABLED=0 -t aegisgate-mcp:lite .
+# Distroless heuristic-only build (~10 MB, 0 CVEs, zero OS packages)
+docker build --build-arg CGO_ENABLED=0 --target lite -t aegisgate-mcp:lite .
 docker run -p 8081:8081 aegisgate-mcp:lite --demo
 ```
 
-The default Docker image uses `debian:bookworm-slim` with CGO enabled,
-including the vendored ONNX Runtime and CharCNN-BiLSTM v13 model for
-full neural threat detection. A `--build-arg CGO_ENABLED=0` variant
-produces a smaller heuristic-only image. Multi-arch builds support
+The ML image uses `debian:bookworm-slim` with `libgnutls30` purged (shared
+libraries and dpkg metadata removed), eliminating all 6 Trivy CVEs while
+keeping the glibc and ONNX Runtime dependencies required for neural
+inference. The lite image is true distroless
+(`gcr.io/distroless/static-debian12:nonroot`) — zero OS packages, zero
+CVEs, ~10 MB. Both targets include a built-in `--health-check` flag for
+Docker HEALTHCHECK (no wget/curl needed). Multi-arch builds support
 both `linux/amd64` and `linux/arm64`.
 
 ### ML Threat Detection (L3)
