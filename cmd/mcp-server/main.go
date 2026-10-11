@@ -40,6 +40,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"strconv"
 	"time"
@@ -96,6 +97,9 @@ func run(args []string) error {
 	// --- Health endpoint ---
 	healthAddr := fs.String("health-addr", getenv("MCP_HEALTH_ADDR", ""), "Health endpoint listen address (empty = disabled)")
 
+	// --- Health check (for Docker HEALTHCHECK — no wget/curl needed) ---
+	healthCheck := fs.Bool("health-check", false, "Perform a health check against --health-addr and exit (0=healthy, 1=unhealthy)")
+
 	// --- Demo tools ---
 	demoTools := fs.Bool("demo", getenvBool("MCP_DEMO_TOOLS", false), "Register demo tools (ping, system_info, echo)")
 
@@ -110,6 +114,35 @@ func run(args []string) error {
 
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+
+	// --- Health check mode (for Docker HEALTHCHECK) ---
+	// When --health-check is passed, the binary does NOT start the server.
+	// It performs an HTTP GET to the health endpoint and exits 0/1.
+	// This eliminates the need for wget/curl in distroless images.
+	if *healthCheck {
+		target := *healthAddr
+		if target == "" {
+			target = getenv("MCP_HEALTH_ADDR", ":8082")
+		}
+		// Normalize: if address starts with ":", prepend localhost
+		if len(target) > 0 && target[0] == ':' {
+			target = "localhost" + target
+		}
+		url := "http://" + target + "/healthz"
+		client := &http.Client{Timeout: 3 * time.Second}
+		resp, err := client.Get(url)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "health check failed: %v\n", err)
+			os.Exit(1)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			fmt.Println("healthy")
+			os.Exit(0)
+		}
+		fmt.Fprintf(os.Stderr, "health check: HTTP %d\n", resp.StatusCode)
+		os.Exit(1)
 	}
 
 	// Start with defaults
