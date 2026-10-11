@@ -102,6 +102,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requests with the RBAC ID always got "session not found or expired".
   Fixed by tracking the HTTP session ID separately from `conn.Session.ID`
   in both the single-request and batch-request paths
+- **Test race condition in `mockResponseWriter`.** `elicitation_test.go`
+  had a data race: test goroutine called `buf.String()` while
+  `sendElicitation` goroutine wrote via `fmt.Fprintf`. Production code
+  was already safe (`sseConn.mu`). Fixed by adding `sync.Mutex` to
+  `mockResponseWriter` with thread-safe `Write`/`WriteHeader`/`String`
+  methods
+- **Dockerfile VERSION stale.** `ARG VERSION=1.1.0` despite being on
+  v1.5.0. Fixed to `1.5.0`. CI build steps also updated to read from
+  `VERSION` file instead of hardcoding
+- **Makefile VERSION stale.** `VERSION ?= 1.1.0` despite being on v1.5.0.
+  Fixed to `1.5.0`
+
+### CI / DevOps
+
+- **Race detector in CI.** New `race` job runs `go test -race` on all
+  tests with CGO enabled, fails on any `DATA RACE` detection
+- **Load tests in CI.** New `load-test` job runs the full k6-style
+  suite (`-tags=load`) on every push/PR, verifying stress, burst,
+  crush, and chaos resilience
+- **Benchmark regression tracking.** New `benchmark` job runs all
+  benchmarks with `benchstat` and uploads results as artifacts
+- **`go mod tidy` check.** Lint job now verifies `go.mod`/`go.sum` are
+  tidy, failing if drift is detected
+- **Version from VERSION file.** Build job reads version from `VERSION`
+  file instead of hardcoding, preventing stale version strings
 
 ### Load Testing
 
