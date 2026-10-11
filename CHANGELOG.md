@@ -5,6 +5,29 @@ All notable changes to AegisGate MCP are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] — 2026-10-11
+
+### Changed
+
+- **Distroless Docker images.** Rewrote Dockerfile with two runtime targets:
+  - `ml` (default): Debian bookworm-slim with libgnutls30 purged (`.so` files
+    + dpkg metadata removed). Eliminates all 6 Trivy CVEs. 127 MB
+  - `lite`: True distroless (`gcr.io/distroless/static-debian12:nonroot`).
+    10.1 MB, zero CVEs, zero OS packages
+- **`--health-check` CLI flag.** Binary performs HTTP GET to `/healthz` and
+  exits 0/1. Eliminates need for wget/curl in Docker HEALTHCHECK
+
+### Fixed
+
+- **MCP Registry compliance.** Shortened `server.json` description to fit
+  100-character limit (#46)
+- **gosec G118 false positive.** Annotated intentional `context.Background()`
+  in graceful shutdown goroutine with `// #nosec G118` directive (#47, #51)
+- **GitHub Stars badge.** `style=social` renders "invalid" on GitHub.
+  Replaced with `style=flat` and social-matching colors (#48, #49)
+- **Audit log directory creation.** Added `os.MkdirAll` for parent directory
+  in audit logger, preventing failure when `/tmp/mcp-audit/` doesn't exist
+
 ## [1.5.0] — 2026-10-10
 
 ### Added
