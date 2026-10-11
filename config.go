@@ -33,6 +33,12 @@ type ServerConfigV2 struct {
 	MaxToolsPerSession int
 	ExecTimeout        time.Duration
 	RateLimitRPM       int
+	// MaxCallsPerToolPerSession limits calls to a single tool per session.
+	// 0 = unlimited. Useful for restricting high-risk tools.
+	MaxCallsPerToolPerSession int
+	// ToolRateOverrides sets per-tool RPM overrides. Tools not in this
+	// map use the global RateLimitRPM. Example: {"exec": 5, "read_file": 120}
+	ToolRateOverrides map[string]int
 
 	// Response scanning
 	ScanResponses       bool
@@ -89,6 +95,14 @@ type ServerConfigV2 struct {
 	MLMaxBurstPerSec int
 	MLMaxConcurrent  int
 
+	// Evasion detection (L2.5): detects common evasion techniques that
+	// bypass L1 regex scanning — encoding (base64, URL, unicode, HTML
+	// entities), splitting (zero-width chars, interleaving, word splitting),
+	// obfuscation (leet speak, CamelCase, padding, markup injection), and
+	// semantic evasion (role-play framing, instruction override).
+	// Runs between L1 regex and L3 neural detection.
+	EvasionDetection bool
+
 	// DemoTools registers three example tools (ping, system_info, echo)
 	// on startup. Useful for testing and demonstration.
 	DemoTools bool
@@ -117,6 +131,9 @@ func DefaultServerConfig() *ServerConfigV2 {
 		BlockOnPromptInject:   true,
 		MaxAuditEntries:       10000,
 		EnableStdioValidation: true,
+		// Evasion detection enabled by default — catches encoded/obfuscated
+		// content that bypasses L1 regex scanning.
+		EvasionDetection: true,
 		// ML throttle defaults — single-server envelope.
 		// These are above normal interactive agent usage but cap
 		// automated/scaled workloads. Upgrade to AegisGate Platform
@@ -130,11 +147,13 @@ func DefaultServerConfig() *ServerConfigV2 {
 // ToGuardrailConfig converts to guardrail config.
 func (c *ServerConfigV2) ToGuardrailConfig() *GuardrailConfig {
 	return &GuardrailConfig{
-		MaxSessions:        c.MaxSessions,
-		MaxToolsPerSession: c.MaxToolsPerSession,
-		ExecTimeout:        c.ExecTimeout,
-		RateLimitRPM:       c.RateLimitRPM,
-		Enabled:            true,
+		MaxSessions:               c.MaxSessions,
+		MaxToolsPerSession:        c.MaxToolsPerSession,
+		ExecTimeout:               c.ExecTimeout,
+		RateLimitRPM:              c.RateLimitRPM,
+		MaxCallsPerToolPerSession: c.MaxCallsPerToolPerSession,
+		ToolRateOverrides:         c.ToolRateOverrides,
+		Enabled:                   true,
 	}
 }
 

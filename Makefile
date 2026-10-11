@@ -10,7 +10,7 @@ CGO ?= 0
 CGO_LDFLAGS := -L$(CURDIR)/lib/$(shell go env GOARCH) -lonnxruntime
 CGO_CFLAGS := -I$(CURDIR)/internal/onnxruntime_go
 
-VERSION ?= 1.1.0
+VERSION ?= 1.5.0
 LDFLAGS := -s -w -X github.com/aegisgatesecurity/aegisgate-mcp.Version=$(VERSION)
 
 .PHONY: build build-cgo build-lite test test-cgo test-all vet fmt race docker docker-lite pentest clean help

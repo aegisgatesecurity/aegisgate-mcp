@@ -15,7 +15,7 @@ AegisGate MCP follows semantic versioning.
 ## Security Architecture
 
 AegisGate MCP is a standalone Model Context Protocol (MCP) security server. It sits
-between MCP clients (AI agents) and MCP servers (tools), providing 22 security layers:
+between MCP clients (AI agents) and MCP servers (tools), providing 23 security layers:
 
 | Layer | Protection | Tier |
 |-------|-----------|------|

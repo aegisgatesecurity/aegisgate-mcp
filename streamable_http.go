@@ -35,6 +35,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -55,8 +56,15 @@ type streamableHTTPTransport struct {
 
 	// SSE connection registry: tracks active long-lived SSE connections
 	// so the server can push notifications to connected clients.
-	sseConns  map[string]*sseConn // session ID → active SSE connection
+	// Supports multiple connections per session (multiplexing) for
+	// clients that open parallel SSE streams or reconnect while the
+	// old connection is still timing out.
+	sseConns  map[string][]*sseConn // session ID → active SSE connections
 	sseConnMu sync.RWMutex
+
+	// Elicitation registry for correlating elicitation/create requests
+	// with client responses. Set via setElicitationRegistry.
+	elicitReg *ElicitationRegistry
 }
 
 // sseConn wraps an active SSE connection for notification delivery.
@@ -73,15 +81,67 @@ type httpSession struct {
 	createdAt time.Time
 	lastSeen  time.Time
 	conn      *Connection
+	// SSE event tracking for Last-Event-ID reconnection support.
+	// eventID is the last assigned event ID (monotonically increasing).
+	eventID int64
+	// eventBuffer stores recent SSE events for replay on reconnection.
+	// Bounded to maxEventBuffer entries to prevent memory exhaustion.
+	eventBuffer []bufferedEvent
+	eventBufMu  sync.Mutex
+}
+
+// bufferedEvent stores an SSE event for replay on reconnection.
+type bufferedEvent struct {
+	id   int64
+	data []byte // marshaled JSON-RPC notification
+}
+
+// maxEventBuffer is the maximum number of events stored per session
+// for Last-Event-ID reconnection replay. Events beyond this limit
+// are evicted (oldest first). If a client reconnects with a gap
+// larger than the buffer, the server sends a re-sync error event.
+const maxEventBuffer = 100
+
+// nextEventID assigns the next monotonic event ID for this session.
+func (s *httpSession) nextEventID() int64 {
+	return atomic.AddInt64(&s.eventID, 1)
+}
+
+// bufferEvent stores an SSE event for replay on reconnection.
+func (s *httpSession) bufferEvent(id int64, data []byte) {
+	s.eventBufMu.Lock()
+	defer s.eventBufMu.Unlock()
+	s.eventBuffer = append(s.eventBuffer, bufferedEvent{id: id, data: data})
+	// Evict oldest events if buffer is full
+	if len(s.eventBuffer) > maxEventBuffer {
+		s.eventBuffer = s.eventBuffer[len(s.eventBuffer)-maxEventBuffer:]
+	}
+}
+
+// replayEvents returns buffered events with IDs greater than lastEventID.
+// Returns nil if no events to replay. Returns the highest buffered event ID
+// so the caller can detect gaps (if lastEventID + 1 < first replayed ID,
+// events were lost due to buffer eviction).
+func (s *httpSession) replayEvents(lastEventID int64) []bufferedEvent {
+	s.eventBufMu.Lock()
+	defer s.eventBufMu.Unlock()
+	var events []bufferedEvent
+	for _, e := range s.eventBuffer {
+		if e.id > lastEventID {
+			events = append(events, e)
+		}
+	}
+	return events
 }
 
 // newStreamableHTTPTransport creates a new Streamable HTTP transport.
 func newStreamableHTTPTransport(addr string, handler HandlerFunc) *streamableHTTPTransport {
 	t := &streamableHTTPTransport{
-		handler:  handler,
-		addr:     addr,
-		sessions: make(map[string]*httpSession),
-		sseConns: make(map[string]*sseConn),
+		handler:   handler,
+		addr:      addr,
+		sessions:  make(map[string]*httpSession),
+		sseConns:  make(map[string][]*sseConn),
+		elicitReg: NewElicitationRegistry(0),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mcp", t.handleMCP)
@@ -236,6 +296,66 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 	}
 	r.Body.Close()
 
+	// Check for JSON-RPC 2.0 batch (array of requests)
+	if len(body) > 0 && body[0] == '[' {
+		var batch []JSONRPCRequest
+		if err := json.Unmarshal(body, &batch); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("MCP-Protocol-Version", ProtocolVersion)
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(JSONRPCResponse{
+				JSONRPC: JSONRPCVersion,
+				Error:   &JSONRPCError{Code: ErrorParseError, Message: "batch parse error: " + err.Error()},
+			})
+			return
+		}
+		// Process each request through the handler chain
+		responses := make([]*JSONRPCResponse, 0, len(batch))
+		for i := range batch {
+			// Each request needs its own session validation
+			batchReq := &batch[i]
+			isInit := batchReq.Method == "initialize"
+			clientSID := r.Header.Get("Mcp-Session-Id")
+
+			var bconn *Connection
+			var batchSessionID string
+			if isInit {
+				sess := t.createSession()
+				bconn = sess.conn
+				batchSessionID = sess.id
+			} else {
+				sess := t.getSession(clientSID)
+				if sess == nil {
+					responses = append(responses, &JSONRPCResponse{
+						JSONRPC: JSONRPCVersion,
+						ID:      batchReq.ID,
+						Error:   &JSONRPCError{Code: ErrorInvalidRequest, Message: "session not found or expired"},
+					})
+					continue
+				}
+				bconn = sess.conn
+				batchSessionID = clientSID
+				t.touchSession(clientSID)
+			}
+			currentSessionID.Set(batchSessionID)
+			resp := t.handler(bconn, batchReq)
+			currentSessionID.Set("")
+			if resp != nil {
+				responses = append(responses, resp)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("MCP-Protocol-Version", ProtocolVersion)
+		if len(responses) == 0 {
+			// All notifications — no response
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(responses)
+		return
+	}
+
 	// Parse the JSON-RPC request
 	var req JSONRPCRequest
 	if err := json.Unmarshal(body, &req); err != nil {
@@ -249,6 +369,36 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Check if this is an elicitation response from the client.
+	// When the server sends an elicitation/create request via SSE,
+	// the client responds with a JSON-RPC response (has result/error
+	// but no method). We detect this by checking if the ID matches
+	// a pending elicitation request.
+	if req.Method == "" && t.elicitReg != nil && t.elicitReg.isElicitationResponse(req.ID) {
+		// This is an elicitation response — deliver it to the pending
+		// request and return 202 Accepted (no body needed).
+		resp := &JSONRPCResponse{
+			JSONRPC: JSONRPCVersion,
+			ID:      req.ID,
+		}
+		// Re-marshal the body to extract result/error fields
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(body, &raw); err == nil {
+			if r, ok := raw["result"]; ok {
+				resp.Result = json.RawMessage(r)
+			}
+			if e, ok := raw["error"]; ok {
+				var jerr JSONRPCError
+				if json.Unmarshal(e, &jerr) == nil {
+					resp.Error = &jerr
+				}
+			}
+		}
+		t.elicitReg.handleElicitationResponse(resp)
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+
 	// Session management:
 	// - initialize: create a new session, return Mcp-Session-Id header
 	// - other requests: validate session ID from header, 404 if invalid
@@ -256,11 +406,13 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 	isInitialize := req.Method == "initialize"
 
 	var conn *Connection
+	var httpSessionID string // key used in t.sessions map
 
 	if isInitialize {
 		// Create a new session for this client
 		sess := t.createSession()
 		conn = sess.conn
+		httpSessionID = sess.id
 	} else {
 		// Validate the session ID
 		sess := t.getSession(clientSessionID)
@@ -270,11 +422,12 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		conn = sess.conn
+		httpSessionID = clientSessionID
 		t.touchSession(clientSessionID)
 	}
 
 	// Set the session ID context for subscription tracking
-	currentSessionID.Set(conn.Session.ID)
+	currentSessionID.Set(httpSessionID)
 	defer func() { currentSessionID.Set("") }()
 
 	// Check if client requests SSE streaming
@@ -286,9 +439,12 @@ func (t *streamableHTTPTransport) handleMCP(w http.ResponseWriter, r *http.Reque
 	// Set common headers
 	w.Header().Set("MCP-Protocol-Version", ProtocolVersion)
 
-	// Always set Mcp-Session-Id on initialize responses
+	// Always set Mcp-Session-Id on initialize responses.
+	// Use httpSessionID (the key in t.sessions) rather than conn.Session.ID,
+	// which may have been changed by the auth middleware's OnAuthSuccess
+	// callback (e.g., to an RBAC session ID).
 	if isInitialize {
-		w.Header().Set("Mcp-Session-Id", conn.Session.ID)
+		w.Header().Set("Mcp-Session-Id", httpSessionID)
 	}
 
 	if wantSSE {
@@ -357,9 +513,28 @@ func (t *streamableHTTPTransport) handleSSEStream(w http.ResponseWriter, r *http
 		flusher.Flush()
 	}
 
+	// Last-Event-ID reconnection: if the client sends a Last-Event-ID
+	// header, replay buffered events with IDs greater than that value.
+	if lastEventIDStr := r.Header.Get("Last-Event-ID"); lastEventIDStr != "" {
+		var lastEventID int64
+		if _, err := fmt.Sscanf(lastEventIDStr, "%d", &lastEventID); err == nil {
+			events := sess.replayEvents(lastEventID)
+			if len(events) > 0 {
+				slog.Info("replaying SSE events on reconnection",
+					"session_id", sessionID, "last_event_id", lastEventIDStr, "events", len(events))
+				for _, e := range events {
+					_, _ = fmt.Fprintf(w, "id: %d\ndata: %s\n\n", e.id, e.data)
+				}
+				if canFlush {
+					flusher.Flush()
+				}
+			}
+		}
+	}
+
 	// Register this connection for notification delivery
-	t.registerSSEConn(sessionID, w, flusher, canFlush)
-	defer t.unregisterSSEConn(sessionID)
+	conn := t.registerSSEConn(sessionID, w, flusher, canFlush)
+	defer t.unregisterSSEConn(sessionID, conn)
 
 	// Hold the connection open until the client disconnects
 	<-r.Context().Done()
@@ -384,21 +559,30 @@ func (t *streamableHTTPTransport) writeSSEResponse(w http.ResponseWriter, resp *
 			flusher.Flush()
 		}
 	} else {
-		// Write the JSON-RPC response as an SSE data event
+		// Write the JSON-RPC response as an SSE data event with event ID
 		data, err := json.Marshal(resp)
 		if err != nil {
 			slog.Error("failed to marshal SSE response", "error", err)
 			return
 		}
-		_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+		// Assign event ID if session exists
+		sess := t.getSession(sessionID)
+		var eventID int64
+		if sess != nil {
+			eventID = sess.nextEventID()
+			sess.bufferEvent(eventID, data)
+			_, _ = fmt.Fprintf(w, "id: %d\ndata: %s\n\n", eventID, data)
+		} else {
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+		}
 		if canFlush {
 			flusher.Flush()
 		}
 	}
 
 	// Register this connection for server-initiated notification delivery
-	t.registerSSEConn(sessionID, w, flusher, canFlush)
-	defer t.unregisterSSEConn(sessionID)
+	conn := t.registerSSEConn(sessionID, w, flusher, canFlush)
+	defer t.unregisterSSEConn(sessionID, conn)
 
 	// Hold the connection open until the client disconnects or server shuts down
 	<-r.Context().Done()
@@ -406,19 +590,33 @@ func (t *streamableHTTPTransport) writeSSEResponse(w http.ResponseWriter, resp *
 }
 
 // registerSSEConn registers an active SSE connection for notification delivery.
-func (t *streamableHTTPTransport) registerSSEConn(sessionID string, w http.ResponseWriter, flusher http.Flusher, canFlush bool) {
+func (t *streamableHTTPTransport) registerSSEConn(sessionID string, w http.ResponseWriter, flusher http.Flusher, canFlush bool) *sseConn {
 	t.sseConnMu.Lock()
 	defer t.sseConnMu.Unlock()
-	t.sseConns[sessionID] = &sseConn{w: w, flusher: flusher, canFlush: canFlush}
-	slog.Debug("registered SSE connection", "session_id", sessionID, "total", len(t.sseConns))
+	conn := &sseConn{w: w, flusher: flusher, canFlush: canFlush}
+	t.sseConns[sessionID] = append(t.sseConns[sessionID], conn)
+	slog.Debug("registered SSE connection", "session_id", sessionID, "total_conns", len(t.sseConns[sessionID]))
+	return conn
 }
 
 // unregisterSSEConn removes an SSE connection from the registry.
-func (t *streamableHTTPTransport) unregisterSSEConn(sessionID string) {
+// With multiplexing, multiple connections may exist per session.
+// The connection is identified by pointer comparison.
+func (t *streamableHTTPTransport) unregisterSSEConn(sessionID string, conn *sseConn) {
 	t.sseConnMu.Lock()
 	defer t.sseConnMu.Unlock()
-	delete(t.sseConns, sessionID)
-	slog.Debug("unregistered SSE connection", "session_id", sessionID, "remaining", len(t.sseConns))
+	conns := t.sseConns[sessionID]
+	for i, c := range conns {
+		if c == conn {
+			// Remove this connection from the slice
+			t.sseConns[sessionID] = append(conns[:i], conns[i+1:]...)
+			if len(t.sseConns[sessionID]) == 0 {
+				delete(t.sseConns, sessionID)
+			}
+			slog.Debug("unregistered SSE connection", "session_id", sessionID, "remaining_conns", len(t.sseConns[sessionID]))
+			return
+		}
+	}
 }
 
 // broadcastNotification sends a JSON-RPC notification to all active SSE
@@ -438,20 +636,87 @@ func (t *streamableHTTPTransport) broadcastNotification(method string, params in
 	t.sseConnMu.RLock()
 	defer t.sseConnMu.RUnlock()
 
-	for sessionID, conn := range t.sseConns {
-		conn.mu.Lock()
-		_, err := fmt.Fprintf(conn.w, "data: %s\n\n", data)
-		if err != nil {
-			slog.Debug("failed to write notification to SSE connection", "session_id", sessionID, "error", err)
+	for sessionID, conns := range t.sseConns {
+		// Get session for event ID assignment and buffering
+		sess := t.getSession(sessionID)
+		var eventID int64
+		if sess != nil {
+			eventID = sess.nextEventID()
+			sess.bufferEvent(eventID, data)
+		}
+
+		for _, conn := range conns {
+			conn.mu.Lock()
+			_, err := fmt.Fprintf(conn.w, "id: %d\ndata: %s\n\n", eventID, data)
+			if err != nil {
+				slog.Debug("failed to write notification to SSE connection", "session_id", sessionID, "error", err)
+				conn.mu.Unlock()
+				continue
+			}
+			if conn.canFlush {
+				conn.flusher.Flush()
+			}
 			conn.mu.Unlock()
-			continue
+			slog.Debug("delivered notification via SSE", "session_id", sessionID, "method", method, "event_id", eventID)
 		}
-		if conn.canFlush {
-			conn.flusher.Flush()
-		}
-		conn.mu.Unlock()
-		slog.Debug("delivered notification via SSE", "session_id", sessionID, "method", method)
 	}
+}
+
+// sendElicitation sends an elicitation/create request to the client via
+// the SSE connection for the given session. It registers a pending request
+// in the elicitation registry and blocks until the client responds or the
+// timeout expires. This is the ElicitationCallback wired to the handler.
+func (t *streamableHTTPTransport) sendElicitation(sessionID string, params *ElicitationParams) (*ElicitationResult, error) {
+	if t.elicitReg == nil {
+		return nil, fmt.Errorf("elicitation not available: no registry")
+	}
+
+	// Register the pending request
+	reqID, ch := t.elicitReg.register()
+
+	// Build the elicitation/create JSON-RPC request
+	elicitReq := buildElicitationRequest(reqID, params)
+	data, err := json.Marshal(elicitReq)
+	if err != nil {
+		t.elicitReg.cancel(reqID)
+		return nil, fmt.Errorf("elicitation: failed to marshal request: %w", err)
+	}
+
+	// Send the request via the client's SSE connection.
+	// We need to find the active SSE connection for this session.
+	t.sseConnMu.RLock()
+	conns := t.sseConns[sessionID]
+	t.sseConnMu.RUnlock()
+
+	if len(conns) == 0 {
+		t.elicitReg.cancel(reqID)
+		return nil, fmt.Errorf("elicitation not available: no active SSE connection for session %s", sessionID)
+	}
+
+	// Assign event ID and buffer for replay support
+	sess := t.getSession(sessionID)
+	var eventID int64
+	if sess != nil {
+		eventID = sess.nextEventID()
+		sess.bufferEvent(eventID, data)
+	}
+
+	// Send to the first available SSE connection for this session
+	conns[0].mu.Lock()
+	if _, err := fmt.Fprintf(conns[0].w, "id: %d\ndata: %s\n\n", eventID, data); err != nil {
+		conns[0].mu.Unlock()
+		t.elicitReg.cancel(reqID)
+		return nil, fmt.Errorf("elicitation: failed to send via SSE: %w", err)
+	}
+	if conns[0].canFlush {
+		conns[0].flusher.Flush()
+	}
+	conns[0].mu.Unlock()
+
+	slog.Debug("sent elicitation/create via SSE", "session_id", sessionID, "request_id", reqID)
+
+	// Block until the client responds or timeout
+	return t.elicitReg.waitForResponse(reqID, ch, 0)
 }
 
 // startStreamableHTTPListener is a test helper that starts the listener

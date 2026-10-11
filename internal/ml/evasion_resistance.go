@@ -135,7 +135,7 @@ func NewEvasionDetector() *EvasionDetector {
 	ed.addPattern(EvasionPattern{
 		Name:        "word_splitting",
 		Category:    "splitting",
-		Pattern:     regexp.MustCompile(`(?i)\b(?:ig\s*nore|by\s*p(?:as)?s|ov\s*err?\s*ide|in\s*ject|sy\s*stem|pr\s*ompt)\b`),
+		Pattern:     regexp.MustCompile(`(?i)\b(?:ig\s+nore|by\s+p(?:as)?\s+s|ov\s+err?\s+ide|in\s+ject|sy\s+stem|pr\s+ompt)\b`),
 		Severity:    0.5,
 		Description: "Attack words split with spaces to evade detection",
 	})

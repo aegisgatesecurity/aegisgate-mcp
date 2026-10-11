@@ -3,16 +3,16 @@
 
 # 🛡️ AegisGate MCP
 
-**Secure MCP server framework — 22 layers of defense, zero dependencies.**
+**Secure MCP server framework — 23 layers of defense, zero dependencies.**
 
 *A hardened, zero-dependency MCP server written in pure Go. Build your MCP server on a foundation that has security built in from line one — not bolted on after a breach.*
 
-Apache 2.0 · 22 security layers · 30 regex patterns + CharCNN-BiLSTM (v13) ML detection · Zero CVEs · Zero external module dependencies
+Apache 2.0 · 23 security layers · 30 regex patterns + CharCNN-BiLSTM (v13) ML detection · Zero CVEs · Zero external module dependencies
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Go](https://img.shields.io/badge/Go-1.26.9-00ADD8?logo=go)](https://golang.org/)
-[![Version](https://img.shields.io/badge/Version-1.4.2-blue.svg)](#changelog)
-[![Coverage](https://img.shields.io/badge/Coverage-91.4%25-brightgreen.svg)](#test-coverage)
+[![Version](https://img.shields.io/badge/Version-1.5.0-blue.svg)](#changelog)
+[![Coverage](https://img.shields.io/badge/Coverage-92.0%25-brightgreen.svg)](#test-coverage)
 [![Dependencies](https://img.shields.io/badge/Dependencies-Zero-success.svg)](#overview)
 [![Docker](https://img.shields.io/badge/Docker-DebianSlim--135MB-blue.svg)](#docker)
 [![ML](https://img.shields.io/badge/ML-CharCNN--BiLSTM_v13-purple.svg)](#ml-threat-detection-l3)
@@ -58,7 +58,7 @@ a breach.
 | CVEs | 3 critical in 6 months | Zero. Ever. |
 | License | MIT | Apache 2.0 |
 
-**22 security layers. Zero dependencies. Zero CVEs. Apache 2.0.**
+**23 security layers. Zero dependencies. Zero CVEs. Apache 2.0.**
 
 > Need proxy mode, OAuth, SIEM, or compliance frameworks? See
 > [When to Upgrade to AegisGate Platform](#when-to-upgrade-to-aegisgate-platform)
@@ -70,7 +70,7 @@ a breach.
 ## Overview
 
 AegisGate MCP is a hardened, zero-dependency MCP server written in pure Go.
-It sits between AI agents and the tools they call, applying **22 layers of
+It sits between AI agents and the tools they call, applying **23 layers of
 defense** to every request — from authentication and RBAC to neural threat
 detection and chain analysis.
 
@@ -84,14 +84,14 @@ dependencies so it can run air-gapped.
 
 | | |
 |---|---|
-| **Version** | 1.4.2 |
+| **Version** | 1.5.0 |
 | **License** | Apache-2.0 |
 | **Go version** | 1.26+ |
 | **Module deps** | Zero (no `require` directives — all third-party code vendored) |
 | **Docker image** | `debian:bookworm-slim`, ~135 MB (ML-enabled) or ~8 MB (heuristic-only) |
 | **Architectures** | amd64, arm64 |
 | **ML model** | CharCNN-BiLSTM v13, 1.6M params, <1ms CPU inference |
-| **Tests** | 429 tests, 10 benchmarks, 3 fuzz targets, 90.8% coverage (non-CGO) / 91.4% (CGO) |
+| **Tests** | 611 unit/integration + 32 load/stress = 643 total, 14 benchmarks, 3 fuzz targets, 92.0% coverage (non-CGO) / 91.9% (CGO) |
 
 ---
 
@@ -270,7 +270,7 @@ if err != nil {
 
 ## Security Layers
 
-AegisGate MCP applies 22 security layers to every request, in order:
+AegisGate MCP applies 23 security layers to every request, in order:
 
 | # | Layer | Description | Source |
 |---|-------|-------------|--------|
@@ -296,6 +296,7 @@ AegisGate MCP applies 22 security layers to every request, in order:
 | 20 | **Heuristic Evasion Detection** | Detects transposition, vowel deletion, word reversal, leetspeak, encoding, splitting, and zero-width character obfuscation | `internal/ml/evasion_resistance.go` |
 | 21 | **NFKC Unicode Normalization** | Maps Unicode compatibility characters to canonical forms before scanning — defeats homoglyph and ligature attacks (full-width `Ｉｇｎｏｒｅ` → `ignore`) | `internal/ml/normalizer.go` |
 | 22 | **Tool Poisoning Detection** | Scans tool descriptions and `inputSchema` recursively for prompt injection at registration time — rejects poisoned tools before they're callable. Maps to OWASP MCP Top 10 M1 | `handler.go` |
+| 23 | **Evasion Detection (L2.5)** | 15 regex patterns detecting encoding (base64, URL, unicode, HTML entities), splitting (zero-width chars, interleaving), obfuscation (leet speak, padding, markup), and semantic evasion (role-play framing, instruction override). Score ≥ 0.8 blocks independently; ≥ 0.3 logs warning. Runs between L1 regex and L3 neural detection | `internal/ml/evasion_resistance.go` |
 
 ---
 
@@ -525,11 +526,12 @@ with unsigned clients while enforcing signatures for clients that provide them.
 
 | Category | Tests | Coverage |
 |----------|-------|----------|
-| Unit + integration (non-CGO) | 425 | 90.8% |
-| Unit + integration (CGO + ML) | 429 | 91.4% |
-| Load / break / soak (build tag: `load`) | 9 | — |
-| Benchmarks | 10 | — |
+| Unit + integration (non-CGO) | 611 | 92.0% |
+| Unit + integration (CGO + ML) | 611 | 91.9% |
+| Load / stress / burst / crush / chaos (build tag: `load`) | 32 | — |
+| Benchmarks | 14 | — |
 | Fuzz targets | 3 | — |
+| Race detector | ✅ Clean | — |
 
 ### Running Tests
 
@@ -541,10 +543,10 @@ CGO_ENABLED=0 go test ./... -count=1 -timeout 120s
 CGO_ENABLED=1 CGO_LDFLAGS="-L$(pwd)/lib/amd64 -lonnxruntime" go test ./... -count=1 -timeout 120s
 
 # With race detector (CGO only — -race requires CGO)
-CGO_ENABLED=1 CGO_LDFLAGS="-L$(pwd)/lib/amd64 -lonnxruntime" go test -race -count=1 -timeout 180s ./...
+CGO_ENABLED=1 CGO_LDFLAGS="-L$(pwd)/lib/amd64 -lonnxruntime" go test -race -count=1 -timeout 300s ./...
 
-# Load/break/soak tests (behind build tag)
-go test -tags=load -count=1 -timeout 120s -v ./...
+# Load/stress/burst/crush/chaos tests (behind build tag)
+go test -tags=load -count=1 -timeout 600s -v ./...
 
 # Benchmarks (regression tracking)
 go test -bench=. -benchmem -benchtime=5s ./...
@@ -555,7 +557,9 @@ go test -fuzz=FuzzHandleRequest -fuzztime=60s ./...
 
 ### Performance Characteristics
 
-Validated via the load test suite (`//go:build load`):
+Validated via the k6-style load test suite (`//go:build load`):
+
+#### Core Performance
 
 | Metric | Value | Test |
 |--------|-------|------|
@@ -565,6 +569,23 @@ Validated via the load test suite (`//go:build load`):
 | Connection churn rate | 2,662 conn/sec | `TestConnectionChurn` |
 | Goroutine leaks (10s soak) | 0 | `TestSoakStability` |
 | Graceful shutdown under load | 1.6 ms | `TestShutdownUnderLoad` |
+
+#### k6-Style Stress / Burst / Crush Results
+
+| Metric | Value | Test |
+|--------|-------|------|
+| **Stress ramp-up (500 conns)** | 100% success, p99=65ms, 738 rps | `TestStressRampUp` |
+| **Burst request spike (1000 reqs)** | 12,710 req/sec | `TestBurstRequestSpike` |
+| **Burst recovery** | 0.99× baseline (instant) | `TestBurstRecovery` |
+| **Crush beyond MaxConnections** | Enforced + server responsive | `TestCrushBeyondMaxConnections` |
+| **Goroutine leak (500 churn)** | Δ=0 | `TestCrushGoroutineExplosion` |
+| **FD leak (500 churn, 5 rounds)** | Δ=1 | `TestFDLeak` |
+| **Graceful shutdown under load** | 1.6ms (50 active generators) | `TestChaosShutdownUnderLoadTCP` |
+| **HTTP concurrent (50 clients)** | 2,290 rps, p99=16ms | `TestHTTPLoadConcurrent` |
+| **HTTP sustained (20×30 pings)** | 0 goroutine leaks | `TestHTTPLoadSustained` |
+| **Cross-transport latency** | HTTP 0.62× TCP | `TestCrossTransportLatency` |
+| **Chaos random drops (30%)** | Server survived all | `TestChaosRandomDrops` |
+| **Malformed flood (500 mixed)** | Server survived all | `TestCrushMalformedFlood` |
 
 </details>
 
@@ -719,7 +740,7 @@ AI Agent (Claude, Cursor, custom)
     │
     ▼
 ┌──────────────────┐
-│  AegisGate MCP   │  ← 22 security layers
+│  AegisGate MCP   │  ← 23 security layers
 │  (TLS/mTLS)      │
 └────────┬─────────┘
          │
@@ -808,7 +829,7 @@ is the natural upgrade path:
 
 | Need | AegisGate MCP (free) | AegisGate Platform |
 |---|---|---|
-| Secure MCP server framework | ✅ 22 layers, zero deps | ✅ Embedded MCP server |
+| Secure MCP server framework | ✅ 23 layers, zero deps | ✅ Embedded MCP server |
 | ML threat detection | ✅ Capped at 100 inf/min (single-server) | ✅ Unlimited, org-wide |
 | Proxy/gateway mode | ❌ Framework, not proxy | ✅ Sits between clients and all AI services |
 | OAuth 2.0 / OIDC / SSO | ❌ Bearer tokens + API keys | ✅ SAML, OIDC, JWT |

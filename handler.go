@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -39,6 +41,54 @@ func (s *sessionIDContext) Get() string {
 	return s.val
 }
 
+// currentElicitFn is a thread-local elicitation function set by the TCP and
+// stdio transports before invoking the handler. The ElicitInput method checks
+// this first, allowing per-connection synchronous elicitation without modifying
+// the shared ElicitationCallback. The HTTP transport uses the shared callback
+// with currentSessionID for session correlation.
+var currentElicitFn elicitFnContext
+
+type elicitFnContext struct {
+	val func(*ElicitationParams) (*ElicitationResult, error)
+	mu  sync.RWMutex
+}
+
+func (e *elicitFnContext) Set(fn func(*ElicitationParams) (*ElicitationResult, error)) {
+	e.mu.Lock()
+	e.val = fn
+	e.mu.Unlock()
+}
+
+func (e *elicitFnContext) Get() func(*ElicitationParams) (*ElicitationResult, error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.val
+}
+
+// currentNotifyFn is a thread-local notification function set by the TCP
+// and stdio transports before invoking the handler. This allows per-connection
+// notification delivery (notifications/progress, notifications/resources/updated,
+// notifications/*/list_changed) without modifying the shared NotifyCallback.
+// The HTTP transport uses the shared NotifyCallback with broadcastNotification.
+var currentNotifyFn notifyFnContext
+
+type notifyFnContext struct {
+	val func(method string, params interface{})
+	mu  sync.RWMutex
+}
+
+func (n *notifyFnContext) Set(fn func(method string, params interface{})) {
+	n.mu.Lock()
+	n.val = fn
+	n.mu.Unlock()
+}
+
+func (n *notifyFnContext) Get() func(method string, params interface{}) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.val
+}
+
 // RequestHandler handles MCP protocol requests.
 type RequestHandler struct {
 	Authorizer     ToolAuthorizer
@@ -54,6 +104,11 @@ type RequestHandler struct {
 	// tool parameters for semantic attacks and evasion variants that
 	// regex cannot detect.
 	ThreatDetector *ml.ThreatDetector
+	// L2.5: Evasion detector — catches encoded/obfuscated content that
+	// bypasses L1 regex scanning. If non-nil, scans tool parameters for
+	// evasion techniques (base64, zero-width chars, leet speak, etc.)
+	// before L1 regex and L3 neural detection.
+	EvasionDetector *ml.EvasionDetector
 	// Tool poisoning scanner: if non-nil, validates tool descriptions
 	// and schemas for prompt injection / exfiltration commands at
 	// registration time (OWASP MCP Top 10: Tool Poisoning).
@@ -62,6 +117,10 @@ type RequestHandler struct {
 	// notification to connected clients (e.g. tools/list_changed).
 	// If nil, notifications are silently dropped.
 	NotifyCallback NotificationCallback
+	// ElicitationCallback is called when a tool handler needs to request
+	// information from the client via elicitation/create. If nil,
+	// ElicitInput returns an error.
+	ElicitationCallback ElicitationCallback
 	// Subscriptions tracks which sessions are subscribed to which
 	// resource URIs. Key: session ID → set of URIs.
 	subscriptions map[string]map[string]bool
@@ -70,6 +129,7 @@ type RequestHandler struct {
 
 // NewRequestHandler creates a new request handler.
 func NewRequestHandler(authorizer ToolAuthorizer, auditLogger AuditLogger, sessionMgr SessionManager) *RequestHandler {
+	installLogFilterOnce()
 	return &RequestHandler{
 		Authorizer:           authorizer,
 		AuditLogger:          auditLogger,
@@ -119,9 +179,27 @@ func (h *RequestHandler) HandleRequest(conn *Connection, req *JSONRPCRequest) *J
 		return h.handleSetLogLevel(req)
 	case "completion/complete":
 		return h.handleComplete(req)
+	case "roots/list":
+		return h.handleRootsList(req)
 	default:
 		return h.handleError(req.ID, ErrorMethodNotFound, "Method not found: "+req.Method)
 	}
+}
+
+// HandleBatchRequest processes a JSON-RPC 2.0 batch (array of requests).
+// Each request is dispatched through HandleRequest. Notifications (requests
+// with no ID) produce no response and are excluded from the result slice.
+// Per JSON-RPC 2.0 spec, if all items are notifications, an empty slice is
+// returned (the caller should send no response).
+func (h *RequestHandler) HandleBatchRequest(conn *Connection, batch []JSONRPCRequest) []*JSONRPCResponse {
+	responses := make([]*JSONRPCResponse, 0, len(batch))
+	for i := range batch {
+		resp := h.HandleRequest(conn, &batch[i])
+		if resp != nil {
+			responses = append(responses, resp)
+		}
+	}
+	return responses
 }
 
 // initializeParams holds the parameters sent with an initialize request.
@@ -167,10 +245,11 @@ func (h *RequestHandler) handleInitialize(ctx context.Context, conn *Connection,
 	result := map[string]interface{}{
 		"protocolVersion": ProtocolVersion,
 		"capabilities": map[string]interface{}{
-			"tools":     map[string]interface{}{"listChanged": true},
-			"resources": map[string]interface{}{"listChanged": true, "subscribe": true},
-			"prompts":   map[string]interface{}{"listChanged": true},
-			"logging":   map[string]interface{}{},
+			"tools":       map[string]interface{}{"listChanged": true},
+			"resources":   map[string]interface{}{"listChanged": true, "subscribe": true},
+			"prompts":     map[string]interface{}{"listChanged": true},
+			"logging":     map[string]interface{}{},
+			"elicitation": map[string]interface{}{},
 		},
 		"serverInfo": map[string]interface{}{
 			"name":    "aegisgate-mcp",
@@ -220,6 +299,7 @@ func (h *RequestHandler) handleListTools(ctx context.Context, req *JSONRPCReques
 func (h *RequestHandler) handleCallTool(ctx context.Context, conn *Connection, req *JSONRPCRequest) *JSONRPCResponse {
 	toolName := ""
 	toolParams := make(map[string]interface{})
+	var progressToken interface{}
 	if req.Params != nil {
 		var params map[string]interface{}
 		if err := json.Unmarshal(req.Params, &params); err == nil {
@@ -228,6 +308,14 @@ func (h *RequestHandler) handleCallTool(ctx context.Context, conn *Connection, r
 			}
 			if p, ok := params["arguments"].(map[string]interface{}); ok {
 				toolParams = p
+			}
+			// Parse _meta.progressToken for progress notifications
+			// (MCP spec 2025-06-18). If the client provides a token,
+			// the server SHOULD send periodic notifications/progress.
+			if meta, ok := params["_meta"].(map[string]interface{}); ok {
+				if pt, ok := meta["progressToken"]; ok {
+					progressToken = pt
+				}
 			}
 		}
 	}
@@ -297,6 +385,47 @@ func (h *RequestHandler) handleCallTool(ctx context.Context, conn *Connection, r
 						"tool", toolName, "reason", result.Reason)
 					return h.handleToolResult(req.ID,
 						"Parameter blocked by STDIO validation: "+result.Reason, true)
+				}
+			}
+		}
+	}
+
+	// L2.5: Evasion detection — catches encoded/obfuscated content that
+	// bypasses L1 regex scanning. Detects base64 encoding, URL encoding,
+	// unicode escapes, HTML entities, zero-width chars, character
+	// interleaving, word splitting, leet speak, markup injection, and
+	// semantic evasion (role-play framing, instruction override).
+	// High-confidence evasion (score ≥ 0.8) is blocked independently.
+	// Lower scores are logged and left for L1/L3 to handle the content.
+	if h.EvasionDetector != nil {
+		for _, paramValue := range toolParams {
+			if strVal, ok := paramValue.(string); ok && strVal != "" {
+				evasResult := h.EvasionDetector.Detect(strVal)
+				if evasResult.Detected {
+					const evasionBlockThreshold = 0.8
+					if evasResult.Score >= evasionBlockThreshold {
+						patterns := make([]string, 0, len(evasResult.MatchedPatterns))
+						for _, m := range evasResult.MatchedPatterns {
+							patterns = append(patterns, m.Name)
+						}
+						if h.AuditLogger != nil {
+							h.AuditLogger.Log(ctx, &AuditEntry{
+								Type: "evasion_blocked", SessionID: sessionID, AgentID: agentID,
+								ToolName: toolName, Error: fmt.Sprintf(
+									"evasion detected (score: %.2f, patterns: %s)",
+									evasResult.Score, strings.Join(patterns, ", ")),
+							})
+						}
+						slog.Warn("evasion detector blocked input",
+							"tool", toolName, "score", evasResult.Score,
+							"patterns", strings.Join(patterns, ", "))
+						return h.handleToolResult(req.ID,
+							fmt.Sprintf("Parameter blocked by evasion detector (score: %.2f, patterns: %s)",
+								evasResult.Score, strings.Join(patterns, ", ")), true)
+					}
+					// Log lower-confidence evasion for monitoring
+					slog.Info("evasion detected (below threshold)",
+						"tool", toolName, "score", evasResult.Score)
 				}
 			}
 		}
@@ -395,6 +524,35 @@ func (h *RequestHandler) handleCallTool(ctx context.Context, conn *Connection, r
 	if h.ExecTimeout > 0 {
 		execCtx, cancelExec = context.WithTimeout(ctx, h.ExecTimeout)
 		defer cancelExec()
+	}
+
+	// If the client provided a _meta.progressToken, send periodic
+	// notifications/progress while the tool executes (MCP spec 2025-06-18).
+	// The notification is delivered via the thread-local currentNotifyFn
+	// (TCP/stdio) or the shared NotifyCallback (HTTP).
+	var progressDone chan struct{}
+	if progressToken != nil {
+		progressDone = make(chan struct{})
+		go func() {
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+			progress := 0
+			for {
+				select {
+				case <-ticker.C:
+					progress += 10
+					h.sendNotification("notifications/progress", map[string]interface{}{
+						"progressToken": progressToken,
+						"progress":      progress,
+					})
+				case <-progressDone:
+					return
+				}
+			}
+		}()
+	}
+	if progressDone != nil {
+		defer close(progressDone)
 	}
 
 	type execResult struct {
@@ -545,7 +703,80 @@ func (h *RequestHandler) handleGetPrompt(ctx context.Context, req *JSONRPCReques
 // MCP Spec: Logging
 // ============================================================
 
-var currentLogLevel = "info"
+// currentLogLevelVal holds the active MCP log level. Updated via
+// logging/setLevel and read by the levelFilterHandler to decide which
+// log records to emit.
+var (
+	currentLogLevelVal = "info"
+	currentLogLevelMu  sync.RWMutex
+)
+
+func getLogLevel() string {
+	currentLogLevelMu.RLock()
+	defer currentLogLevelMu.RUnlock()
+	return currentLogLevelVal
+}
+
+func setLogLevel(level string) {
+	currentLogLevelMu.Lock()
+	currentLogLevelVal = level
+	currentLogLevelMu.Unlock()
+}
+
+// mcpLevelToSlog maps MCP log level strings to slog.Level values.
+// MCP levels: debug, info, notice, warning, error, critical, alert, emergency.
+func mcpLevelToSlog(level string) slog.Level {
+	switch strings.ToLower(level) {
+	case "debug":
+		return slog.LevelDebug
+	case "info", "notice":
+		return slog.LevelInfo
+	case "warning", "warn":
+		return slog.LevelWarn
+	case "error", "critical", "alert", "emergency":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
+// levelFilterHandler wraps an slog.Handler and drops records below the
+// current MCP log level set via logging/setLevel. This makes the
+// logging/setLevel RPC actually affect server log output.
+type levelFilterHandler struct {
+	inner slog.Handler
+}
+
+func (h *levelFilterHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return level >= mcpLevelToSlog(getLogLevel())
+}
+
+func (h *levelFilterHandler) Handle(ctx context.Context, r slog.Record) error {
+	return h.inner.Handle(ctx, r)
+}
+
+func (h *levelFilterHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &levelFilterHandler{inner: h.inner.WithAttrs(attrs)}
+}
+
+func (h *levelFilterHandler) WithGroup(name string) slog.Handler {
+	return &levelFilterHandler{inner: h.inner.WithGroup(name)}
+}
+
+// installLogFilterOnce ensures the level filter handler is installed on
+// the default slog logger exactly once. Called lazily from NewRequestHandler
+// rather than init() to avoid interfering with test framework log capture.
+var installLogFilter sync.Once
+
+func installLogFilterOnce() {
+	installLogFilter.Do(func() {
+		// Create a fresh TextHandler writing to stderr. We do NOT wrap
+		// slog.Default().Handler() because that can interfere with test
+		// frameworks that replace the default logger.
+		h := slog.NewTextHandler(os.Stderr, nil)
+		slog.SetDefault(slog.New(&levelFilterHandler{inner: h}))
+	})
+}
 
 func (h *RequestHandler) handleSetLogLevel(req *JSONRPCRequest) *JSONRPCResponse {
 	if req.Params != nil {
@@ -553,7 +784,7 @@ func (h *RequestHandler) handleSetLogLevel(req *JSONRPCRequest) *JSONRPCResponse
 			Level string `json:"level"`
 		}
 		if err := json.Unmarshal(req.Params, &params); err == nil && params.Level != "" {
-			currentLogLevel = params.Level
+			setLogLevel(params.Level)
 			slog.Info("log level set", "level", params.Level)
 		}
 	}
@@ -565,14 +796,154 @@ func (h *RequestHandler) handleSetLogLevel(req *JSONRPCRequest) *JSONRPCResponse
 // ============================================================
 
 func (h *RequestHandler) handleComplete(req *JSONRPCRequest) *JSONRPCResponse {
-	// Completion is optional. Return empty completions.
+	// Parse completion request per MCP spec 2025-06-18:
+	//   ref: { type: "ref/prompt"|"ref/resource", name/uri: ... }
+	//   argument: { name: string, value: string (partial) }
+	var params struct {
+		Ref struct {
+			Type string `json:"type"`
+			Name string `json:"name"` // for ref/prompt
+			URI  string `json:"uri"`  // for ref/resource
+		} `json:"ref"`
+		Argument struct {
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		} `json:"argument"`
+	}
+	if req.Params != nil {
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return h.handleError(req.ID, ErrorInvalidParams, "invalid params: "+err.Error())
+		}
+	}
+
+	// If no ref type specified, return empty completions (backward compatible)
+	if params.Ref.Type == "" {
+		return h.handleSuccess(req.ID, emptyCompletion())
+	}
+
+	switch params.Ref.Type {
+	case "ref/prompt":
+		return h.handlePromptCompletion(req.ID, params.Ref.Name, params.Argument.Name, params.Argument.Value)
+	case "ref/resource":
+		return h.handleResourceCompletion(req.ID, params.Ref.URI, params.Argument.Value)
+	default:
+		return h.handleError(req.ID, ErrorInvalidParams, "unknown ref type: "+params.Ref.Type)
+	}
+}
+
+// handleRootsList handles the roots/list request (MCP spec 2025-06-18).
+// roots/list is a client→server request where the server asks the client
+// for its filesystem roots. AegisGate MCP is a security server, not a
+// filesystem server, so we return an empty roots list. We do not advertise
+// the roots capability, but handling the method gracefully ensures
+// compatibility with clients that send it unconditionally.
+func (h *RequestHandler) handleRootsList(req *JSONRPCRequest) *JSONRPCResponse {
 	return h.handleSuccess(req.ID, map[string]interface{}{
+		"roots": []interface{}{},
+	})
+}
+
+// handlePromptCompletion completes prompt argument values.
+// Validates that the prompt and argument exist, then returns completions.
+func (h *RequestHandler) handlePromptCompletion(id interface{}, promptName, argName, argValue string) *JSONRPCResponse {
+	if h.PromptReg == nil {
+		return h.handleSuccess(id, emptyCompletion())
+	}
+
+	// Validate prompt exists
+	prompts := h.PromptReg.List()
+	var prompt *Prompt
+	for i := range prompts {
+		if prompts[i].Name == promptName {
+			prompt = &prompts[i]
+			break
+		}
+	}
+	if prompt == nil {
+		return h.handleError(id, ErrorInvalidParams, "prompt not found: "+promptName)
+	}
+
+	// Validate argument exists in prompt definition
+	argFound := false
+	for _, arg := range prompt.Arguments {
+		if arg.Name == argName {
+			argFound = true
+			break
+		}
+	}
+	if !argFound {
+		return h.handleError(id, ErrorInvalidParams,
+			fmt.Sprintf("argument %q not defined for prompt %q", argName, promptName))
+	}
+
+	// No completion provider mechanism yet — return empty completions.
+	// Future: prompt handlers could optionally provide a CompletionFunc.
+	return h.handleSuccess(id, emptyCompletion())
+}
+
+// handleResourceCompletion completes resource URIs by matching the
+// partial value against registered resources and templates.
+func (h *RequestHandler) handleResourceCompletion(id interface{}, refURI, partialValue string) *JSONRPCResponse {
+	if h.ResourceReg == nil {
+		return h.handleSuccess(id, emptyCompletion())
+	}
+
+	var values []interface{}
+
+	// Match against registered resource URIs
+	for _, res := range h.ResourceReg.List() {
+		if strings.HasPrefix(res.URI, partialValue) {
+			values = append(values, res.URI)
+		}
+	}
+
+	// Match against resource templates
+	for _, tmpl := range h.ResourceReg.ListTemplates() {
+		// For templates, check if the partial value is a prefix of a
+		// possible expansion. Simple heuristic: if the template starts
+		// with the partial value's prefix, include it.
+		templatePrefix := templatePrefix(tmpl.URITemplate)
+		if strings.HasPrefix(templatePrefix, partialValue) || strings.HasPrefix(partialValue, templatePrefix) {
+			values = append(values, tmpl.URITemplate)
+		}
+	}
+
+	total := len(values)
+	hasMore := false
+	// Cap at 100 completions
+	if total > 100 {
+		values = values[:100]
+		hasMore = true
+	}
+
+	return h.handleSuccess(id, map[string]interface{}{
+		"completion": map[string]interface{}{
+			"values":  values,
+			"total":   total,
+			"hasMore": hasMore,
+		},
+	})
+}
+
+// emptyCompletion returns the standard empty completion response.
+func emptyCompletion() map[string]interface{} {
+	return map[string]interface{}{
 		"completion": map[string]interface{}{
 			"values":  []interface{}{},
 			"total":   0,
 			"hasMore": false,
 		},
-	})
+	}
+}
+
+// templatePrefix extracts the static prefix of a URI template
+// (everything before the first { variable }).
+func templatePrefix(uriTemplate string) string {
+	idx := strings.Index(uriTemplate, "{")
+	if idx < 0 {
+		return uriTemplate
+	}
+	return uriTemplate[:idx]
 }
 
 func (h *RequestHandler) handleSuccess(id interface{}, result interface{}) *JSONRPCResponse {
@@ -676,15 +1047,12 @@ func (h *RequestHandler) sessionKeyFromReq(req *JSONRPCRequest) string {
 // sessions subscribed to the given URI. This is called when a resource's
 // content changes.
 func (h *RequestHandler) NotifyResourceUpdated(uri string) {
-	if h.NotifyCallback == nil {
-		return
-	}
 	h.subMu.RLock()
 	defer h.subMu.RUnlock()
 	for sessionKey, uris := range h.subscriptions {
 		if uris[uri] {
 			slog.Debug("notifying subscriber of resource update", "session", sessionKey, "uri", uri)
-			h.NotifyCallback("notifications/resources/updated", map[string]interface{}{
+			h.sendNotification("notifications/resources/updated", map[string]interface{}{
 				"uri": uri,
 			})
 		}
@@ -694,11 +1062,38 @@ func (h *RequestHandler) NotifyResourceUpdated(uri string) {
 // NotifyListChanged sends a notifications/*/list_changed notification
 // to connected clients.
 func (h *RequestHandler) NotifyListChanged(resourceType string) {
-	if h.NotifyCallback == nil {
-		return
-	}
 	method := fmt.Sprintf("notifications/%s/list_changed", resourceType)
-	h.NotifyCallback(method, nil)
+	h.sendNotification(method, nil)
+}
+
+// sendNotification delivers a notification via the thread-local notify
+// function (set by TCP/stdio transports for per-connection delivery) if
+// available, otherwise via the shared NotifyCallback (set by the HTTP
+// transport for broadcast). Returns true if the notification was delivered.
+func (h *RequestHandler) sendNotification(method string, params interface{}) bool {
+	if fn := currentNotifyFn.Get(); fn != nil {
+		fn(method, params)
+		return true
+	}
+	if h.NotifyCallback != nil {
+		h.NotifyCallback(method, params)
+		return true
+	}
+	return false
+}
+
+// ElicitInput sends an elicitation/create request to the client to request
+// information from the user. Returns the user's response or an error if no
+// elicitation callback is wired or the client declines/cancels.
+func (h *RequestHandler) ElicitInput(params *ElicitationParams) (*ElicitationResult, error) {
+	// Check thread-local first (TCP/stdio transport sets per-connection)
+	if fn := currentElicitFn.Get(); fn != nil {
+		return fn(params)
+	}
+	if h.ElicitationCallback == nil {
+		return nil, fmt.Errorf("elicitation not available: no callback wired")
+	}
+	return h.ElicitationCallback(params)
 }
 
 // ============================================================

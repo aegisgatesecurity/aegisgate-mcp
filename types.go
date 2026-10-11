@@ -224,6 +224,25 @@ type HandlerFunc func(conn *Connection, req *JSONRPCRequest) *JSONRPCResponse
 // The notification is delivered as a JSON-RPC notification (no ID).
 type NotificationCallback func(method string, params interface{})
 
+// ElicitationCallback is called when a tool handler needs to request
+// information from the client/user via elicitation/create. The transport
+// layer wires this to send an elicitation request to the connected client
+// and return the response. If no callback is set, ElicitInput returns an error.
+type ElicitationCallback func(params *ElicitationParams) (*ElicitationResult, error)
+
+// ElicitationParams holds the parameters for an elicitation/create request
+// sent from server to client per MCP spec 2025-06-18.
+type ElicitationParams struct {
+	Message         string                 `json:"message"`                   // Human-readable prompt message
+	RequestedSchema map[string]interface{} `json:"requestedSchema,omitempty"` // JSON schema describing desired input
+}
+
+// ElicitationResult holds the client's response to an elicitation request.
+type ElicitationResult struct {
+	Action  string                 `json:"action"`            // "accept", "decline", or "cancel"
+	Content map[string]interface{} `json:"content,omitempty"` // User input (only if action is "accept")
+}
+
 // ToolHandlerFunc executes a tool and returns its result.
 type ToolHandlerFunc func(ctx context.Context, params map[string]interface{}) (interface{}, error)
 

@@ -2,16 +2,16 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.aegisgatesecurity/aegisgate-mcp",
   "title": "AegisGate MCP",
-  "description": "Secure MCP server framework with 22 security layers and ML threat detection. Zero dependencies.",
+  "description": "Secure MCP server framework with 23 security layers, elicitation, and ML threat detection. Zero dependencies.",
   "repository": {
     "url": "https://github.com/aegisgatesecurity/aegisgate-mcp",
     "source": "github"
   },
-  "version": "1.4.2",
+  "version": "1.5.0",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/aegisgatesecurity/aegisgate-mcp:1.4.2",
+      "identifier": "ghcr.io/aegisgatesecurity/aegisgate-mcp:1.5.0",
       "transport": {
         "type": "streamable-http",
         "url": "http://0.0.0.0:8081/mcp"

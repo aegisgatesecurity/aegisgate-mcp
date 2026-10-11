@@ -91,8 +91,8 @@ func (t *stdioTransport) readLoop(ctx context.Context) error {
 			return nil
 		default:
 		}
-		var req JSONRPCRequest
-		if err := t.decoder.Decode(&req); err != nil {
+		var rawMsg json.RawMessage
+		if err := t.decoder.Decode(&rawMsg); err != nil {
 			if err == io.EOF {
 				return nil
 			}
@@ -103,7 +103,100 @@ func (t *stdioTransport) readLoop(ctx context.Context) error {
 		}
 		t.conn.SetLastSeen(time.Now())
 
+		// Set up thread-local elicitation function for this connection.
+		// Tool handlers can call ElicitInput() to synchronously send
+		// an elicitation/create request and read the response.
+		if t.conn.ElicitFunc == nil {
+			elicitReg := NewElicitationRegistry(0)
+			t.conn.ElicitFunc = func(params *ElicitationParams) (*ElicitationResult, error) {
+				reqID, _ := elicitReg.register()
+				elicitReq := buildElicitationRequest(reqID, params)
+				t.mu.Lock()
+				if err := t.encoder.Encode(elicitReq); err != nil {
+					t.mu.Unlock()
+					elicitReg.cancel(reqID)
+					return nil, fmt.Errorf("elicitation: failed to send request: %w", err)
+				}
+				t.mu.Unlock()
+				var resp JSONRPCResponse
+				if err := t.decoder.Decode(&resp); err != nil {
+					elicitReg.cancel(reqID)
+					return nil, fmt.Errorf("elicitation: failed to read response: %w", err)
+				}
+				result, err := parseElicitationResponse(&resp)
+				if err != nil {
+					elicitReg.cancel(reqID)
+					return nil, err
+				}
+				elicitReg.resolve(reqID, elicitationResponse{result: result})
+				return result, nil
+			}
+		}
+
+		// Per-connection notification function for stdio: writes
+		// notifications directly to the encoder.
+		notifyFn := func(method string, params interface{}) {
+			t.mu.Lock()
+			_ = t.encoder.Encode(&JSONRPCNotification{
+				JSONRPC: JSONRPCVersion,
+				Method:  method,
+				Params:  params,
+			})
+			t.mu.Unlock()
+		}
+
+		// Check for JSON-RPC 2.0 batch (array of requests)
+		if len(rawMsg) > 0 && rawMsg[0] == '[' {
+			var batch []JSONRPCRequest
+			if err := json.Unmarshal(rawMsg, &batch); err != nil {
+				t.mu.Lock()
+				_ = t.encoder.Encode(&JSONRPCResponse{
+					JSONRPC: JSONRPCVersion,
+					Error:   &JSONRPCError{Code: ErrorParseError, Message: "batch parse error: " + err.Error()},
+				})
+				t.mu.Unlock()
+				continue
+			}
+			currentElicitFn.Set(t.conn.ElicitFunc)
+			currentSessionID.Set(t.conn.Session.ID)
+			currentNotifyFn.Set(notifyFn)
+			responses := make([]*JSONRPCResponse, 0, len(batch))
+			for i := range batch {
+				resp := t.handler(t.conn, &batch[i])
+				if resp != nil {
+					responses = append(responses, resp)
+				}
+			}
+			currentElicitFn.Set(nil)
+			currentSessionID.Set("")
+			currentNotifyFn.Set(nil)
+			if len(responses) > 0 {
+				t.mu.Lock()
+				_ = t.encoder.Encode(responses)
+				t.mu.Unlock()
+			}
+			continue
+		}
+
+		// Single request
+		var req JSONRPCRequest
+		if err := json.Unmarshal(rawMsg, &req); err != nil {
+			t.mu.Lock()
+			_ = t.encoder.Encode(&JSONRPCResponse{
+				JSONRPC: JSONRPCVersion,
+				Error:   &JSONRPCError{Code: ErrorParseError, Message: "parse error: " + err.Error()},
+			})
+			t.mu.Unlock()
+			continue
+		}
+
+		currentElicitFn.Set(t.conn.ElicitFunc)
+		currentSessionID.Set(t.conn.Session.ID)
+		currentNotifyFn.Set(notifyFn)
 		resp := t.handler(t.conn, &req)
+		currentElicitFn.Set(nil)
+		currentSessionID.Set("")
+		currentNotifyFn.Set(nil)
 		// Notifications (no ID) may return nil to skip the response
 		if resp == nil {
 			continue

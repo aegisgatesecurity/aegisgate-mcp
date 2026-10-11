@@ -5,10 +5,154 @@ All notable changes to AegisGate MCP are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.2] — 2026-10-09
+## [1.5.0] — 2026-10-10
+
+### Added
+
+- **Evasion Detection (L2.5).** Wired the `EvasionDetector` into the live
+  request pipeline as layer 23, between L1 regex scanning and L3 neural
+  detection. Detects 15 evasion patterns across 4 categories: encoding
+  (base64, URL, unicode, HTML entities), splitting (zero-width chars,
+  interleaving, word splitting), obfuscation (leet speak, CamelCase,
+  padding, markup injection), and semantic evasion (role-play framing,
+  instruction override, context manipulation, output constraint bypass).
+  Score ≥ 0.8 blocks independently; ≥ 0.3 logs warning. Pure Go, no CGO
+  required. Brings security layer count from 22 to 23
+- **`completion/complete` implementation.** Replaced empty stub with
+  functional completion handler per MCP spec 2025-06-18. `ref/prompt`
+  validates prompt and argument existence. `ref/resource` matches partial
+  URI against registered resources and templates, capped at 100 results
+  with `hasMore` flag
+- **Per-session SSE multiplexing.** Changed `sseConns` from single to
+  multiple connections per session. Supports parallel SSE streams and
+  reconnection while old connection is still open. Uses pointer-based
+  connection removal
+- **`Last-Event-ID` reconnection support.** Implements SSE reconnection
+  per spec. Monotonic event IDs, bounded ring buffer (100 events), replay
+  on reconnection. Events include `id:` field for client tracking
+- **Per-tool rate limiting.** `MaxCallsPerToolPerSession` limits total
+  calls to a single tool per session (atomic counter). `ToolRateOverrides`
+  sets per-tool RPM overrides (e.g., `{"exec": 5, "read_file": 120}`)
+- **Elicitation support.** `elicitation` capability advertised in
+  initialize response. `ElicitInput()` and `SetElicitationCallback()`
+  methods on `SecuredMCPServer` allow tool handlers to request information
+  from the client/user via `elicitation/create`. Fully wired across all
+  three transports: HTTP/SSE (async correlation via pending request
+  registry, response arrives as separate POST), TCP (synchronous
+  request-response on bidirectional connection), and stdio (same
+  synchronous pattern via stdin/stdout pipes). `ElicitationRegistry`
+  manages pending requests with 30s default timeout, monotonic IDs,
+  and concurrent-safe resolution
+- **Startup chain validation logging.** `wireHandlerChain()` logs active
+  security chain execution order and layer count at startup
+- **HTTP transport benchmarks.** `BenchmarkHTTPPing` and
+  `BenchmarkMiddlewareChain` added. `BENCHMARKS.md` published with 12
+  benchmark results, methodology, and reproduction instructions
+- **3 new chain order tests** (`chain_order_test.go`): auth blocks,
+  evasion detector wired, evasion stats in `Stats()`
+- **`logging/setLevel` log filtering.** `logging/setLevel` now actually
+  filters server log output via a custom `slog.Handler` wrapper. MCP
+  levels (debug, info, notice, warning, error, critical, alert,
+  emergency) map to slog levels. Thread-safe via RWMutex
+- **`notifications/progress` support.** Tool calls with
+  `_meta.progressToken` now receive periodic `notifications/progress`
+  notifications during long-running execution. Progress delivered via
+  thread-local `currentNotifyFn` (TCP/stdio) or `NotifyCallback` (HTTP)
+- **JSON-RPC 2.0 batch support.** All three transports (TCP, stdio,
+  HTTP) now handle JSON-RPC batch requests (arrays of requests).
+  Responses are collected and returned as an array. All-notification
+  batches produce no response
+- **`roots/list` handler.** Returns empty roots list for compatibility
+  with clients that send it unconditionally, even though we don't
+  advertise the `roots` capability
+- **`currentSessionID` for TCP/stdio.** TCP and stdio transports now
+  set `currentSessionID` before dispatching requests, enabling correct
+  subscription tracking on all transports, not just HTTP
+
+### Changed
+
+- Version bumped from 1.4.2 to 1.5.0
+- `ServerConfigV2`: new `EvasionDetection` (default: `true`),
+  `MaxCallsPerToolPerSession`, `ToolRateOverrides` fields
+- Initialize response now advertises `elicitation` capability
+- `sseConns` type changed from `map[string]*sseConn` to
+  `map[string][]*sseConn` for multiplexing
+- `broadcastNotification()` and `writeSSEResponse()` now assign event IDs
+  and buffer events for replay
+- `server.json`: version 1.5.0, description updated to "23 security layers"
+
+### Performance (CGO_ENABLED=0, 40-core, Go 1.26.9)
+
+- Middleware chain overhead: **13.3μs** per request (negligible vs LLM
+  latency)
+- Auth middleware: **510ns** (sub-microsecond)
+- Content scanning: **1.9μs** (100 chars), **590μs** (500 bytes), linear
+  scaling
+- HTTP transport: **310μs** per request (full HTTP roundtrip)
+- Near-zero allocation hot paths: `ToolsList` (3 allocs),
+  `AuthMiddleware` (2 allocs)
 
 ### Fixed
 
+- **HTTP session ID mismatch with RBAC.** When `OnAuthSuccess` was
+  configured (the default in `NewSecuredMCPServer`), the auth middleware
+  replaced `conn.Session.ID` with an RBAC session ID. The HTTP transport
+  then returned this RBAC ID in the `Mcp-Session-Id` header, but stored
+  the session in its map under the original HTTP session ID. Subsequent
+  requests with the RBAC ID always got "session not found or expired".
+  Fixed by tracking the HTTP session ID separately from `conn.Session.ID`
+  in both the single-request and batch-request paths
+- **Test race condition in `mockResponseWriter`.** `elicitation_test.go`
+  had a data race: test goroutine called `buf.String()` while
+  `sendElicitation` goroutine wrote via `fmt.Fprintf`. Production code
+  was already safe (`sseConn.mu`). Fixed by adding `sync.Mutex` to
+  `mockResponseWriter` with thread-safe `Write`/`WriteHeader`/`String`
+  methods
+- **Dockerfile VERSION stale.** `ARG VERSION=1.1.0` despite being on
+  v1.5.0. Fixed to `1.5.0`. CI build steps also updated to read from
+  `VERSION` file instead of hardcoding
+- **Makefile VERSION stale.** `VERSION ?= 1.1.0` despite being on v1.5.0.
+  Fixed to `1.5.0`
+
+### CI / DevOps
+
+- **Race detector in CI.** New `race` job runs `go test -race` on all
+  tests with CGO enabled, fails on any `DATA RACE` detection
+- **Load tests in CI.** New `load-test` job runs the full k6-style
+  suite (`-tags=load`) on every push/PR, verifying stress, burst,
+  crush, and chaos resilience
+- **Benchmark regression tracking.** New `benchmark` job runs all
+  benchmarks with `benchstat` and uploads results as artifacts
+- **`go mod tidy` check.** Lint job now verifies `go.mod`/`go.sum` are
+  tidy, failing if drift is detected
+- **Version from VERSION file.** Build job reads version from `VERSION`
+  file instead of hardcoding, preventing stale version strings
+
+### Load Testing
+
+- **Comprehensive k6-style load testing suite** (22 tests, `//go:build load`):
+  - **Stress**: Ramp-up (10→500 connections, 100% success at 738 rps),
+    resource monitor (10 waves × 50 conns × 20 reqs, goroutine leak check)
+  - **Burst**: Connection spike (200 simultaneous), request spike (1000
+    reqs in 79ms = 12,710 rps), recovery (baseline p50 restored in <1s)
+  - **Crush**: Beyond MaxConnections (500 into limit 30), memory pressure
+    (300KB payloads), goroutine explosion (500 connection churn, 0 leak),
+    malformed flood (500 mixed messages, server survives)
+  - **Chaos**: Random drops (100 conns, 30% drop rate), half-sent messages
+    (partial JSON + garbage + abrupt close), shutdown under load (50
+    active generators, graceful in 1.6ms)
+  - **HTTP transport**: Concurrent (50 clients, 2290 rps), sustained (20
+    clients × 30 reqs), burst (200 concurrent), oversized body, auth flood,
+    soak (5s, 0 errors), batch load (20 clients × 10 batch), connection
+    exhaustion (300 concurrent)
+  - **Cross-transport**: TCP vs HTTP latency head-to-head comparison
+  - **FD leak**: 500 connection churn across 5 rounds, ≤1 FD delta
+  - Metrics framework: p50/p90/p99 latencies, goroutine count, heap
+    growth, GC cycles, throughput, error rate — formatted report per test
+
+## [1.4.2] — 2026-10-09
+
+### Fixed
 - **SSE connections killed after 60 seconds.** The HTTP server's
   `WriteTimeout` was 60s, which silently terminated long-lived SSE
   connections after one minute — breaking server-initiated notification

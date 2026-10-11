@@ -42,6 +42,9 @@ type SecuredMCPServer struct {
 	// ML inference throttle — rate-limits ML detection to prevent
 	// standalone server from being used as high-throughput ML API.
 	mlThrottle *ml.Throttle
+	// L2.5: Evasion detector — catches encoded/obfuscated content that
+	// bypasses L1 regex scanning. Runs between L1 and L3 in the pipeline.
+	evasionDetector *ml.EvasionDetector
 }
 
 // NewSecuredMCPServer creates a new secured MCP server with all security layers.
@@ -151,24 +154,34 @@ func NewSecuredMCPServer(cfg *ServerConfigV2) (*SecuredMCPServer, error) {
 		handler.ThreatDetector = threatDetector
 	}
 
+	// L2.5: Evasion detector — catches encoded/obfuscated content that
+	// bypasses L1 regex scanning. Pure Go (regex-based), no CGO required.
+	var evasionDetector *ml.EvasionDetector
+	if cfg.EvasionDetection {
+		evasionDetector = ml.NewEvasionDetector()
+		handler.EvasionDetector = evasionDetector
+		slog.Info("evasion detector enabled", "layer", "L2.5")
+	}
+
 	// Guardrails
 	guardrails := NewGuardrailMiddleware(cfg.ToGuardrailConfig(), handler.Registry)
 
 	// Build server
 	srv := &SecuredMCPServer{
-		config:         cfg,
-		handler:        handler,
-		guardrails:     guardrails,
-		scanner:        scanner,
-		authMgr:        authMgr,
-		sigVerifier:    sigVerifier,
-		stdioGuard:     stdioGuard,
-		auditLogger:    auditLogger,
-		sessionMgr:     sessionMgr,
-		rbacMgr:        rbacMgr,
-		policyEngine:   policyEngine,
-		threatDetector: threatDetector,
-		mlThrottle:     mlThrottle,
+		config:          cfg,
+		handler:         handler,
+		guardrails:      guardrails,
+		scanner:         scanner,
+		authMgr:         authMgr,
+		sigVerifier:     sigVerifier,
+		stdioGuard:      stdioGuard,
+		auditLogger:     auditLogger,
+		sessionMgr:      sessionMgr,
+		rbacMgr:         rbacMgr,
+		policyEngine:    policyEngine,
+		threatDetector:  threatDetector,
+		mlThrottle:      mlThrottle,
+		evasionDetector: evasionDetector,
 	}
 
 	// Wire the handler chain: auth → guardrails → response scan → handler
@@ -205,19 +218,34 @@ func (s *SecuredMCPServer) wireHandlerChain() {
 		return s.handler.HandleRequest(conn, req)
 	}
 
+	// Track active layers for startup logging
+	var layers []string
+	layers = append(layers, "core_handler")
+
 	// Wrap with response scanning
 	if s.config.ScanResponses {
 		chain = s.wrapWithResponseScan(chain)
+		layers = append(layers, "response_scan")
 	}
 
 	// Wrap with guardrails
 	chain = s.guardrails.GuardrailHandler(chain)
+	layers = append(layers, "guardrails")
 
 	// Wrap with signature verification
 	chain = s.wrapWithSignatureVerification(chain)
+	layers = append(layers, "signature_verification")
 
 	// Wrap with auth
 	chain = s.authMgr.AuthMiddleware(chain)
+	layers = append(layers, "auth")
+
+	// Log the active security chain (execution order: outermost first)
+	slog.Info("security chain wired",
+		"execution_order", "auth → signature_verification → guardrails → response_scan → core_handler",
+		"layers", len(layers),
+		"evasion_detection", s.evasionDetector != nil,
+		"ml_threat_detection", s.threatDetector != nil)
 
 	// Set on server
 	tlsCfg, err := s.config.BuildTLSConfig()
@@ -508,6 +536,24 @@ func (s *SecuredMCPServer) SetNotifyCallback(cb NotificationCallback) {
 	s.handler.NotifyCallback = cb
 }
 
+// SetElicitationCallback sets the elicitation callback. The transport layer
+// calls this to wire elicitation/create requests to the client connection.
+// Tool handlers can then call ElicitInput() to request information from the user.
+func (s *SecuredMCPServer) SetElicitationCallback(cb ElicitationCallback) {
+	s.handler.ElicitationCallback = cb
+}
+
+// ElicitInput sends an elicitation/create request to the client, asking the
+// user for input. The message is displayed to the user, and requestedSchema
+// describes the expected input format (JSON Schema). Returns the user's
+// response or an error if elicitation is not available or the client declines.
+func (s *SecuredMCPServer) ElicitInput(message string, requestedSchema map[string]interface{}) (*ElicitationResult, error) {
+	return s.handler.ElicitInput(&ElicitationParams{
+		Message:         message,
+		RequestedSchema: requestedSchema,
+	})
+}
+
 // prompt injection or exfiltration patterns. Returns a *ToolPoisoningError
 // if suspicious patterns are found, nil otherwise.
 func (s *SecuredMCPServer) ScanToolForPoisoning(name, desc string, inputSchema map[string]interface{}) *ToolPoisoningError {
@@ -612,6 +658,7 @@ func (s *SecuredMCPServer) Stats() map[string]interface{} {
 		"trusted_keys":         s.sigVerifier.TrustedKeyCount(),
 		"policy_rules":         s.policyEngine.RuleCount(),
 		"ml_throttle":          s.mlThrottleStatsMap(),
+		"evasion_detection":    s.evasionStatsMap(),
 	}
 }
 
@@ -636,6 +683,20 @@ func (s *SecuredMCPServer) mlThrottleStatsMap() map[string]interface{} {
 		"total_allowed":     ts.TotalAllowed,
 		"total_throttled":   ts.TotalThrottled,
 		"current_in_flight": ts.CurrentInFlight,
+	}
+}
+
+// evasionStatsMap returns evasion detection stats as a map for Stats().
+func (s *SecuredMCPServer) evasionStatsMap() map[string]interface{} {
+	if s.evasionDetector == nil {
+		return nil
+	}
+	stats := s.evasionDetector.GetStats()
+	return map[string]interface{}{
+		"total_scans": stats.TotalScans,
+		"detections":  stats.Detections,
+		"by_category": stats.ByCategory,
+		"by_pattern":  stats.ByPattern,
 	}
 }
 
@@ -743,6 +804,18 @@ func ServeWithOptions(cfg *ServerConfigV2, opts *ServeOptions) error {
 		// (list_changed, resources/updated) are delivered to active SSE
 		// connections via the transport's broadcast mechanism.
 		srv.SetNotifyCallback(transport.broadcastNotification)
+
+		// Wire the elicitation callback so tool handlers can call
+		// ElicitInput() to request information from the client via
+		// elicitation/create sent over the SSE connection.
+		srv.SetElicitationCallback(func(params *ElicitationParams) (*ElicitationResult, error) {
+			// Get the current session ID from the thread-local context
+			sid := currentSessionID.Get()
+			if sid == "" {
+				return nil, fmt.Errorf("elicitation not available: no active session")
+			}
+			return transport.sendElicitation(sid, params)
+		})
 
 		if err := transport.start(ctx); err != nil {
 			return err
