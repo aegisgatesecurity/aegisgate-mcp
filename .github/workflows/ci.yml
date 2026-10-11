@@ -94,10 +94,12 @@ jobs:
       - name: go mod tidy check
         run: |
           go mod tidy
-          if ! git diff --exit-code go.mod go.sum; then
+          if ! git diff --exit-code -- go.mod go.sum; then
             echo "❌ go.mod/go.sum not tidy — run 'go mod tidy' and commit"
+            git diff -- go.mod go.sum || true
             exit 1
           fi
+          echo "✅ go.mod is tidy"
 
   # ========================================
   # Test — non-CGO (heuristic-only, 335 tests)
