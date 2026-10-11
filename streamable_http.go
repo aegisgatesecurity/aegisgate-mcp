@@ -244,6 +244,11 @@ func (t *streamableHTTPTransport) start(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
+		// #nosec G118 -- context.Background() is intentional: ctx is already
+		// cancelled at this point, so we need a fresh root context for the
+		// graceful shutdown timeout. Using ctx here would immediately cancel
+		// the shutdown, preventing httpSrv.Shutdown from draining in-flight
+		// requests. This is the standard Go graceful-shutdown pattern.
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = t.httpSrv.Shutdown(shutdownCtx)
