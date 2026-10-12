@@ -70,7 +70,7 @@ jobs:
         run: |
           cosign sign-blob --yes --bundle mcp-server-${{ matrix.suffix }}.bundle mcp-server-${{ matrix.suffix }}
       - name: Upload artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: mcp-server-lite-${{ matrix.suffix }}
           path: |
@@ -120,7 +120,7 @@ jobs:
         run: |
           cosign sign-blob --yes --bundle mcp-server-${{ matrix.suffix }}.bundle mcp-server-${{ matrix.suffix }}
       - name: Upload artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: mcp-server-ml-${{ matrix.suffix }}
           path: |
@@ -156,7 +156,7 @@ jobs:
           upload-artifact: false
           upload-release-assets: false
       - name: Upload SBOMs
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-files
           path: |
