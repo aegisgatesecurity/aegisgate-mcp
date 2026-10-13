@@ -131,7 +131,7 @@ jobs:
           PASS=$(echo "$TOTAL >= 90" | bc)
           if [ "$PASS" != "1" ]; then echo "FAIL: coverage ${TOTAL}% < 90%"; exit 1; fi
       - name: Upload coverage
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-lite
           path: coverage-lite.out
@@ -172,7 +172,7 @@ jobs:
           PASS=$(echo "$TOTAL >= 90" | bc)
           if [ "$PASS" != "1" ]; then echo "FAIL: coverage ${TOTAL}% < 90%"; exit 1; fi
       - name: Upload coverage
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-ml
           path: coverage-ml.out
@@ -257,7 +257,7 @@ jobs:
           benchstat bench-current.txt 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
           echo '```' >> $GITHUB_STEP_SUMMARY
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-results
           path: bench-current.txt
