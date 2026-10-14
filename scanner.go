@@ -41,14 +41,15 @@ func (s Severity) String() string {
 type Category string
 
 const (
-	CatPII           Category = "PII"
-	CatCredential    Category = "Credential"
-	CatFinancial     Category = "Financial"
-	CatCryptographic Category = "Cryptographic"
-	CatNetwork       Category = "Network"
-	CatPrompt        Category = "Prompt"
-	CatXSS           Category = "XSS"
-	CatCompliance    Category = "Compliance"
+	CatPII               Category = "PII"
+	CatCredential        Category = "Credential"
+	CatFinancial         Category = "Financial"
+	CatCryptographic     Category = "Cryptographic"
+	CatNetwork           Category = "Network"
+	CatPrompt            Category = "Prompt"
+	CatXSS               Category = "XSS"
+	CatCompliance        Category = "Compliance"
+	CatDangerousFunction Category = "DangerousFunction"
 )
 
 // Pattern defines a single detection pattern.
@@ -224,6 +225,51 @@ func defaultScannerPatterns() []*Pattern {
 		{Name: "OWASP_LLM01_PromptInjection", Regex: regexp.MustCompile(`(?i)(jailbreak|dan\s+prompt|do anything now)`), Severity: SeverityCritical, Category: CatCompliance, Description: "OWASP LLM01: Prompt injection"},
 		{Name: "OWASP_LLM02_InsecureOutput", Regex: regexp.MustCompile(`(?i)document\.write\s*\(`), Severity: SeverityHigh, Category: CatCompliance, Description: "OWASP LLM02: Insecure output handling"},
 		{Name: "OWASP_LLM06_SensitiveInfo", Regex: regexp.MustCompile(`(?i)(ssn|social security|credit card|passport number)\s*[:=]`), Severity: SeverityHigh, Category: CatCompliance, Description: "OWASP LLM06: Sensitive information disclosure"},
+
+		// === Dangerous Functions (34 patterns) ===
+		// Provenance: github.com/aegisgatesecurity/aegisgate-scanner/pkg/detectors/dangerous_functions.go
+		// These detect dangerous code-level patterns in tool descriptions and
+		// input schemas — a key defense against tool poisoning attacks where
+		// malicious code is embedded in tool metadata.
+		// --- Python ---
+		{Name: "DangerousPyEval", Regex: regexp.MustCompile(`eval\s*\(`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "Python eval() allows arbitrary code execution"},
+		{Name: "DangerousPyExec", Regex: regexp.MustCompile(`exec\s*\(`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "Python exec() allows arbitrary code execution"},
+		{Name: "DangerousPyOsSystem", Regex: regexp.MustCompile(`os\.system\s*\(`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "os.system() executes shell commands"},
+		{Name: "DangerousPySubprocessShell", Regex: regexp.MustCompile(`subprocess\.(call|run|Popen)\s*\([^)]*shell\s*=\s*True`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "subprocess with shell=True allows command injection"},
+		{Name: "DangerousPyOsPopen", Regex: regexp.MustCompile(`os\.popen\s*\(`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "os.popen() executes shell commands"},
+		{Name: "DangerousPyImport", Regex: regexp.MustCompile(`__import__\s*\(`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "Dynamic import via __import__()"},
+		{Name: "DangerousPyPickleLoads", Regex: regexp.MustCompile(`pickle\.loads?\s*\(`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "pickle.loads() can execute arbitrary code"},
+		{Name: "DangerousPyYamlUnsafeLoad", Regex: regexp.MustCompile(`yaml\.load\s*\(`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "yaml.load() without SafeLoader is dangerous"},
+		{Name: "DangerousPyMarshalLoads", Regex: regexp.MustCompile(`marshal\.loads?\s*\(`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "marshal.loads() can execute arbitrary code"},
+		{Name: "DangerousPyCompile", Regex: regexp.MustCompile(`compile\s*\(`), Severity: SeverityMedium, Category: CatDangerousFunction, Description: "compile() can create executable code objects"},
+		{Name: "DangerousPyCtypes", Regex: regexp.MustCompile(`ctypes\.(CDLL|WinDLL|PyDLL)`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "ctypes allows direct library calls"},
+		{Name: "DangerousPyInputExec", Regex: regexp.MustCompile(`input\s*\(`), Severity: SeverityLow, Category: CatDangerousFunction, Description: "input() in Python 2 evaluates as code"},
+		// --- JavaScript/TypeScript ---
+		{Name: "DangerousJsEval", Regex: regexp.MustCompile(`(?i)\beval\s*\(`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "JavaScript eval() allows arbitrary code execution"},
+		{Name: "DangerousJsFunctionConstructor", Regex: regexp.MustCompile(`new\s+Function\s*\(`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "Function constructor creates code from strings"},
+		{Name: "DangerousJsChildProcessExec", Regex: regexp.MustCompile(`child_process\.exec\s*\(`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "child_process.exec() runs shell commands"},
+		{Name: "DangerousJsChildProcessSpawn", Regex: regexp.MustCompile(`child_process\.spawn\s*\(`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "child_process.spawn() creates new processes"},
+		{Name: "DangerousJsSetTimeoutString", Regex: regexp.MustCompile(`setTimeout\s*\(\s*['"]`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "setTimeout with string argument evals code"},
+		{Name: "DangerousJsSetIntervalString", Regex: regexp.MustCompile(`setInterval\s*\(\s*['"]`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "setInterval with string argument evals code"},
+		{Name: "DangerousJsDocumentWrite", Regex: regexp.MustCompile(`document\.write\s*\(`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "document.write() can inject scripts"},
+		{Name: "DangerousJsInnerHTML", Regex: regexp.MustCompile(`\.innerHTML\s*=`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "innerHTML assignment can inject scripts"},
+		// --- Cross-language ---
+		{Name: "DangerousSqlInjection", Regex: regexp.MustCompile(`(?i)(SELECT|INSERT|UPDATE|DELETE|DROP|UNION)\s+.*\+.*\+`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "SQL query with string concatenation (injection risk)"},
+		{Name: "DangerousCommandInjection", Regex: regexp.MustCompile(`(?i)(system|exec|popen|backticks|` + "`" + `)\s*\(`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "Command execution function"},
+		// --- Network endpoints in code ---
+		{Name: "DangerousHardcodedUrlHttp", Regex: regexp.MustCompile(`http://[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`), Severity: SeverityMedium, Category: CatDangerousFunction, Description: "Hardcoded HTTP URL (no TLS)"},
+		{Name: "DangerousBase64Blob", Regex: regexp.MustCompile(`[A-Za-z0-9+/]{60,}={0,2}`), Severity: SeverityMedium, Category: CatDangerousFunction, Description: "Large base64 blob (possible encoded payload)"},
+		{Name: "DangerousIpAddressUrl", Regex: regexp.MustCompile(`https?://[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "URL with raw IP address (possible C2)"},
+		{Name: "DangerousLocalhostUrl", Regex: regexp.MustCompile(`https?://localhost(:[0-9]+)?`), Severity: SeverityMedium, Category: CatDangerousFunction, Description: "URL pointing to localhost"},
+		{Name: "DangerousInternalServiceUrl", Regex: regexp.MustCompile(`https?://(internal|intranet|admin|management)\.`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "URL pointing to internal service"},
+		{Name: "DangerousWebsocketUrl", Regex: regexp.MustCompile(`wss?://[a-zA-Z0-9.-]+`), Severity: SeverityMedium, Category: CatDangerousFunction, Description: "WebSocket connection URL"},
+		{Name: "DangerousAwsEndpoint", Regex: regexp.MustCompile(`https?://[a-z0-9-]+\.execute-api\.[a-z0-9-]+\.amazonaws\.com`), Severity: SeverityMedium, Category: CatDangerousFunction, Description: "AWS API Gateway endpoint"},
+		{Name: "DangerousGcpEndpoint", Regex: regexp.MustCompile(`https?://[a-z0-9-]+\.cloudfunctions\.net`), Severity: SeverityMedium, Category: CatDangerousFunction, Description: "GCP Cloud Functions endpoint"},
+		// --- Encoding/obfuscation ---
+		{Name: "DangerousPyB64decode", Regex: regexp.MustCompile(`base64\.b64decode\s*\(`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "base64.b64decode() — common in obfuscated payloads"},
+		{Name: "DangerousJsAtob", Regex: regexp.MustCompile(`\batob\s*\(`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "atob() decodes base64 — common in obfuscated payloads"},
+		{Name: "DangerousB64EnvVar", Regex: regexp.MustCompile(`(?i)(env|process\.env|os\.environ).*base64`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "Base64 from environment variable (obfuscation pattern)"},
+		{Name: "DangerousB64EvalChain", Regex: regexp.MustCompile(`(?i)(eval|exec|Function)\s*\(\s*(base64|atob|b64decode)`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "eval(base64decode()) chain — classic obfuscated execution"},
 	}
 }
 

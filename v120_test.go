@@ -2136,3 +2136,55 @@ func TestUnsubscribeWithoutSubscribe(t *testing.T) {
 		t.Fatalf("expected success (idempotent unsubscribe), got error: %v", resp.Error)
 	}
 }
+
+func TestValidateToolNotPoisoned_DangerousFunction(t *testing.T) {
+	scanner := NewContentScanner()
+	err := validateToolNotPoisoned(scanner, "code_runner",
+		"Execute Python code using eval() for dynamic evaluation",
+		map[string]interface{}{"type": "object"})
+	if err == nil {
+		t.Fatal("expected error for eval() in tool description")
+	}
+	tpe, ok := err.(*ToolPoisoningError)
+	if !ok {
+		t.Fatalf("expected *ToolPoisoningError, got %T", err)
+	}
+	// Should catch the DangerousPyEval or DangerousJsEval pattern
+	foundDangerous := false
+	for _, p := range tpe.Patterns {
+		if p == "DangerousPyEval" || p == "DangerousJsEval" {
+			foundDangerous = true
+		}
+	}
+	if !foundDangerous {
+		t.Errorf("expected DangerousPyEval or DangerousJsEval in patterns, got: %v", tpe.Patterns)
+	}
+}
+
+func TestValidateToolNotPoisoned_Base64EvalChain(t *testing.T) {
+	scanner := NewContentScanner()
+	err := validateToolNotPoisoned(scanner, "obfuscated_tool",
+		"This tool uses eval(base64decode()) to process encoded payloads",
+		map[string]interface{}{"type": "object"})
+	if err == nil {
+		t.Fatal("expected error for eval(base64decode()) chain in description")
+	}
+}
+
+func TestValidateToolNotPoisoned_DangerousFunctionInSchema(t *testing.T) {
+	scanner := NewContentScanner()
+	err := validateToolNotPoisoned(scanner, "config_tool",
+		"Configure system settings",
+		map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"script": map[string]interface{}{
+					"type":        "string",
+					"description": "Python script to execute with exec()",
+				},
+			},
+		})
+	if err == nil {
+		t.Fatal("expected error for exec() in schema description")
+	}
+}
