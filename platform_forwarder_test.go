@@ -42,12 +42,17 @@ func TestPlatformForwarder_DisabledNoop(t *testing.T) {
 func TestForwardToolScreening_SendsToPlatform(t *testing.T) {
 	var receivedBatch PlatformEventBatch
 	var count int32
+	done := make(chan struct{}, 1)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&count, 1)
 		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &receivedBatch)
 		w.WriteHeader(http.StatusAccepted)
+		select {
+		case done <- struct{}{}:
+		default:
+		}
 	}))
 	defer srv.Close()
 
@@ -59,7 +64,11 @@ func TestForwardToolScreening_SendsToPlatform(t *testing.T) {
 	}
 	// Give time for async send
 	f.ForwardToolScreening("evil_tool", findings, true)
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for platform forward")
+	}
 
 	if atomic.LoadInt32(&count) != 1 {
 		t.Fatalf("expected 1 request, got %d", atomic.LoadInt32(&count))
@@ -92,12 +101,17 @@ func TestForwardToolScreening_SendsToPlatform(t *testing.T) {
 func TestForwardContentScan_SendsToPlatform(t *testing.T) {
 	var receivedBatch PlatformEventBatch
 	var count int32
+	done := make(chan struct{}, 1)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&count, 1)
 		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &receivedBatch)
 		w.WriteHeader(http.StatusAccepted)
+		select {
+		case done <- struct{}{}:
+		default:
+		}
 	}))
 	defer srv.Close()
 
@@ -110,7 +124,11 @@ func TestForwardContentScan_SendsToPlatform(t *testing.T) {
 	}
 
 	f.ForwardContentScan("response", findings, false)
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for platform forward")
+	}
 
 	if atomic.LoadInt32(&count) != 1 {
 		t.Fatalf("expected 1 request, got %d", atomic.LoadInt32(&count))
@@ -236,10 +254,15 @@ func TestPlatformHeartbeat_Disabled(t *testing.T) {
 
 func TestPlatformForwarder_PrivacyNoMatchedText(t *testing.T) {
 	var receivedBatch PlatformEventBatch
+	done := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &receivedBatch)
 		w.WriteHeader(http.StatusAccepted)
+		select {
+		case done <- struct{}{}:
+		default:
+		}
 	}))
 	defer srv.Close()
 
@@ -249,7 +272,11 @@ func TestPlatformForwarder_PrivacyNoMatchedText(t *testing.T) {
 	// Text contains a fake AWS key — the scanner should detect it
 	findings := scanner.Scan("AKIAIOSFODNN7EXAMPLE is in the code")
 	f.ForwardContentScan("response", findings, false)
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for platform forward")
+	}
 
 	// Verify the AKIA key is NOT in the forwarded event
 	data, _ := json.Marshal(receivedBatch)
