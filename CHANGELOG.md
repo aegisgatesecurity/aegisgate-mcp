@@ -5,6 +5,44 @@ All notable changes to AegisGate MCP are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] — 2026-10-14 - Moat Deepening: RAG Patterns, Prompt Leakage, Dangerous Functions, Platform Interop
+
+> **v1.6.0** extends MCP's detection coverage from 30 to 91 regex patterns, adds platform interop for pattern pulling and event forwarding, and enhances tool poisoning detection with dangerous function screening. All new features are air-gap compatible — platform interop is opt-in, outbound, config-driven, and fully disabled when `platform_url` is empty.
+
+### Added — Detection Pattern Expansion (30 → 91 patterns)
+
+- **Dangerous function detection (28 patterns)** — Scans tool parameters and descriptions for dangerous code patterns: `eval()`, `exec()`, `os.system()`, `subprocess(shell=True)`, `pickle.loads()`, `__import__()`, `child_process.exec()`, `innerHTML`, `Function()`, `document.write()`, base64 decode chains, hardcoded URLs, internal service URLs, and more. Imported from AegisGate Scanner's `pkg/detectors/dangerous_functions.go`.
+- **RAG attack patterns (9 patterns)** — Detects vector store injection, RAG smuggling (metadata, HTML comments), retrieval bypass, RAG poisoning (conditional instructions, embedding manipulation), and knowledge base data injection.
+- **Prompt leakage patterns (7 patterns)** — Detects system prompt leakage in responses: `<system>` tag content, meta-instruction references, internal tool list disclosure, instruction repeats, and raw config dumps.
+- **OT/ICS protocol patterns (3 patterns)** — OPC UA, Modbus, and DNP3 protocol address detection.
+- **Additional credential patterns** — JWT tokens, GitHub PATs, generic API keys, RSA private keys.
+- **Additional compliance patterns** — OWASP LLM01 (prompt injection), LLM02 (insecure output), LLM06 (sensitive info disclosure).
+
+### Added — Platform Interop
+
+- **Pattern pull**: MCP can pull canonical detection patterns from Platform's telemetry endpoint (`GET /api/v1/patterns/latest`) with ETag caching. Air-gap compatible — no-op when `platform_url` is empty.
+- **Event forwarding**: MCP forwards security events to Platform's telemetry receiver (`POST /api/v1/events`) in canonical contract format. Air-gap compatible — no-op when `platform_url` is empty.
+- **Tool description screening**: Enhanced tool registration screening now checks for dangerous function patterns in addition to prompt injection. Maps to OWASP MCP Top 10 MCP03 (Tool Poisoning).
+
+### Security Layers
+
+- Still 23 security layers (detection enhancements are within existing Layer 9 Input Scanning and Layer 10 Response Scanning)
+- Layer 22 (Tool Poisoning Detection) now screens for 34 dangerous function patterns in addition to prompt injection patterns
+
+### Testing
+
+- 22 new tests (Phase 3 interop + Phase 4 OWASP gaps)
+- Overall coverage: 93.4%
+- All existing tests continue to pass
+
+### Version Bumps
+
+- MCP VERSION: 1.5.0 → 1.6.0
+- `doc.go`: version constant updated
+- README badges updated to v1.6.0
+
+---
+
 ## [1.5.1] — 2026-10-11
 
 ### Changed

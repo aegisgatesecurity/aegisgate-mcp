@@ -7,11 +7,11 @@
 
 *A hardened, zero-dependency MCP server written in pure Go. Build your MCP server on a foundation that has security built in from line one — not bolted on after a breach.*
 
-Apache 2.0 · 23 security layers · 30 regex patterns + CharCNN-BiLSTM (v13) ML detection · Zero CVEs · Zero external module dependencies
+Apache 2.0 · 23 security layers · 91 regex patterns + CharCNN-BiLSTM (v13) ML detection · Zero CVEs · Zero external module dependencies
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Go](https://img.shields.io/badge/Go-1.26.9-00ADD8?logo=go)](https://golang.org/)
-[![Version](https://img.shields.io/badge/Version-1.5.1-blue.svg)](#changelog)
+[![Version](https://img.shields.io/badge/Version-1.6.0-blue.svg)](#changelog)
 [![Coverage](https://img.shields.io/badge/Coverage-92.0%25-brightgreen.svg)](#test-coverage)
 [![Dependencies](https://img.shields.io/badge/Dependencies-Zero-success.svg)](#overview)
 [![Docker](https://img.shields.io/badge/Docker-Distroless_0_CVEs-blue.svg)](#docker)
@@ -53,12 +53,12 @@ a breach.
 | Authentication | ❌ Bring your own | ✅ Bearer tokens + API keys + lockout |
 | Authorization | ❌ Nothing | ✅ 4-tier RBAC with per-tool permissions |
 | Audit logging | ❌ Nothing | ✅ Tamper-evident SHA-256 hash chain |
-| Threat detection | ❌ Nothing | ✅ 30 regex patterns + neural ML (<1ms) |
+| Threat detection | ❌ Nothing | ✅ 91 regex patterns + neural ML (<1ms) |
 | Supply chain risk | ❌ npm/PyPI deps | ✅ Zero dependencies (Go stdlib only) |
 | CVEs | 3 critical in 6 months | Zero. Ever. |
 | License | MIT | Apache 2.0 |
 
-**23 security layers. Zero dependencies. Zero CVEs. Apache 2.0.**
+**23 security layers. 91 regex patterns. Zero dependencies. Zero CVEs. Apache 2.0.**
 
 > Need proxy mode, OAuth, SIEM, or compliance frameworks? See
 > [When to Upgrade to AegisGate Platform](#when-to-upgrade-to-aegisgate-platform)
@@ -84,7 +84,7 @@ dependencies so it can run air-gapped.
 
 | | |
 |---|---|
-| **Version** | 1.5.1 |
+| **Version** | 1.6.0 |
 | **License** | Apache-2.0 |
 | **Go version** | 1.26+ |
 | **Module deps** | Zero (no `require` directives — all third-party code vendored) |
@@ -285,8 +285,8 @@ AegisGate MCP applies 23 security layers to every request, in order:
 | 6 | **Guardrails** | Per-session tool call limits and rate limiting | `guardrails.go` |
 | 7 | **Chain Analysis** | Detects privilege escalation, data exfiltration chains, and repeated dangerous tool calls | `guardrails.go` |
 | 8 | **Token Bucket Rate Limiting** | Sliding-window rate limiting with token bucket algorithm (RPM + burst capacity) | `guardrails.go` |
-| 9 | **Input Scanning** | Scans tool *parameters* for prompt injection before execution (~30 patterns) | `handler.go`, `scanner.go` |
-| 10 | **Response Scanning** | Scans tool *responses* for PII, secrets, XSS, and prompt injection (~30 detection patterns) | `scanner.go` |
+| 9 | **Input Scanning** | Scans tool *parameters* for prompt injection before execution (~79 patterns) | `handler.go`, `scanner.go` |
+| 10 | **Response Scanning** | Scans tool *responses* for PII, secrets, XSS, and prompt injection (~79 detection patterns) | `scanner.go` |
 | 11 | **Secret Redaction** | Scrubs sensitive data (PII, secrets) from responses before returning to the client | `scanner.go` |
 | 12 | **Tool Execution Timeout** | Configurable per-call timeout prevents hanging or runaway tools | `handler.go` |
 | 13 | **STDIO Validation** | Shell injection prevention via allowlist + blocklist for stdio transport commands | `stdio_guard.go` |
@@ -298,8 +298,23 @@ AegisGate MCP applies 23 security layers to every request, in order:
 | 19 | **Neural Threat Detection (L3)** | CharCNN-BiLSTM v13 model scores semantic attacks and evasion variants that regex misses. Two-tier blocking: ≥0.95 blocks independently, 0.50–0.94 requires L1/L2 corroboration | `internal/ml/` |
 | 20 | **Heuristic Evasion Detection** | Detects transposition, vowel deletion, word reversal, leetspeak, encoding, splitting, and zero-width character obfuscation | `internal/ml/evasion_resistance.go` |
 | 21 | **NFKC Unicode Normalization** | Maps Unicode compatibility characters to canonical forms before scanning — defeats homoglyph and ligature attacks (full-width `Ｉｇｎｏｒｅ` → `ignore`) | `internal/ml/normalizer.go` |
-| 22 | **Tool Poisoning Detection** | Scans tool descriptions and `inputSchema` recursively for prompt injection at registration time — rejects poisoned tools before they're callable. Maps to OWASP MCP Top 10 M1 | `handler.go` |
+| 22 | **Tool Poisoning Detection** | Scans tool descriptions and `inputSchema` recursively for prompt injection (34 dangerous function patterns from AegisGate Scanner) at registration time — rejects poisoned tools before they're callable. Maps to OWASP MCP Top 10 M1 | `handler.go` |
 | 23 | **Evasion Detection (L2.5)** | 15 regex patterns detecting encoding (base64, URL, unicode, HTML entities), splitting (zero-width chars, interleaving), obfuscation (leet speak, padding, markup), and semantic evasion (role-play framing, instruction override). Score ≥ 0.8 blocks independently; ≥ 0.3 logs warning. Runs between L1 regex and L3 neural detection | `internal/ml/evasion_resistance.go` |
+
+### Detection Pattern Categories (91 patterns)
+
+AegisGate MCP scans all tool parameters and responses with 91 regex patterns across 8 categories:
+
+| Category | Patterns | Examples |
+|----------|----------|---------|
+| Prompt Injection | 13 | Ignore-previous-instructions, role-play escalation, delimiter injection, base64 payloads |
+| Dangerous Functions | 28 | eval(), exec(), os.system(), subprocess(shell=True), pickle.loads(), child_process.exec() |
+| Credentials | 7 | AWS keys, GitHub PATs, JWT tokens, RSA private keys, generic API keys |
+| PII | 5 | SSN, email, credit cards (Visa, Mastercard, Amex) |
+| RAG Attacks | 9 | Vector store injection, RAG smuggling, retrieval bypass, embedding poisoning |
+| Prompt Leakage | 7 | System prompt disclosure, meta-instruction references, tool list disclosure |
+| XSS | 3 | Script tags, SVG onload, image onerror |
+| Compliance/OT | 9 | OWASP LLM01/02/06, OPC UA, Modbus, DNP3, network addresses |
 
 ---
 
@@ -818,6 +833,18 @@ Detailed documentation is available in the `docs/` directory:
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for version history and notable changes.
+
+---
+
+## Platform Interop (Optional)
+
+AegisGate MCP can optionally integrate with AegisGate Platform for pattern pulling and event forwarding:
+
+- **Pattern Pull**: Fetch canonical detection patterns from Platform's telemetry endpoint with ETag caching
+- **Event Forwarding**: Send security events to Platform's telemetry receiver in canonical contract format
+- **Tool Description Screening**: Enhanced with 34 dangerous function patterns from AegisGate Scanner
+
+All interop features are air-gap compatible — fully disabled when `platform_url` is not configured. No network calls, no telemetry, no external dependencies.
 
 ---
 

@@ -34,4 +34,4 @@
 package mcpsecurity
 
 // Version is the standalone package version.
-const Version = "1.5.1"
+const Version = "1.6.0"
