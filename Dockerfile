@@ -50,7 +50,7 @@ COPY . .
 # Default: CGO_ENABLED=1 (full neural threat detection).
 # Override: --build-arg CGO_ENABLED=0 for heuristic-only (smaller image).
 ARG CGO_ENABLED=1
-ARG VERSION=1.5.1
+ARG VERSION=1.6.0
 ARG TARGETARCH
 
 # Set up environment for CGO build with vendored onnxruntime.
