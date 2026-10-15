@@ -23,6 +23,7 @@ Apache 2.0 · 23 security layers · 91 regex patterns + CharCNN-BiLSTM (v13) ML 
 
 [![Listed on mcpservers.org](https://mcpservers.org/badge.svg)](https://mcpservers.org/servers/aegisgatesecurity/aegisgate-mcp)
 [![MCP Registry](https://img.shields.io/badge/MCP_Registry-Published-0066CC)](https://registry.modelcontextprotocol.io/#/servers/io.github.aegisgatesecurity/aegisgate-mcp)
+[![Glama](https://glama.ai/mcp/servers/aegisgatesecurity/aegisgate-mcp/badges/score.svg)](https://glama.ai/mcp/servers/aegisgatesecurity/aegisgate-mcp)
 
 [Quick Start](#quick-start) · [Security Layers](#security-layers) · [RBAC](#rbac-roles) · [Architecture](#architecture) · [Protocol](#mcp-protocol-support) · [Docs](#documentation) · [Releases](https://github.com/aegisgatesecurity/aegisgate-mcp/releases)
 
