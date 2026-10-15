@@ -1,3 +1,4 @@
+
                                  Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -40,10 +41,10 @@
       "Derivative Works" shall mean any work, whether in Source or Object
       form, that is based on (or derived from) the Work and for which the
       editorial revisions, annotations, elaborations, or other modifications
-      represent, in whole or in part, an original work of authorship. For the
-      purposes of this License, Derivative Works shall not include works that
-      remain separable from, or merely link (or bind by name) to the interfaces
-      of, the Work and Derivative Works thereof.
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
 
       "Contribution" shall mean any work of authorship, including
       the original version of the Work and any modifications or additions
@@ -120,10 +121,12 @@
           that such additional attribution notices cannot be construed
           as modifying the License.
 
-      You may add Your own copyright statement(s) to Your Derivative Works
-      that You distribute, alongside or as an addendum to the NOTICE text
-      from the Work, provided that such additional copyright notices
-      cannot be construed as modifying the License.
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
 
    5. Submission of Contributions. Unless You explicitly state otherwise,
       any Contribution intentionally submitted for inclusion in the Work
@@ -184,7 +187,7 @@
       same "printed page" as the copyright notice for easier
       identification within third-party archives.
 
-   Copyright 2024-2026 AegisGate Security, LLC
+   Copyright [yyyy] [name of copyright owner]
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -194,6 +197,6 @@
 
    Unless required by applicable law or agreed to in writing, software
    distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-   implied. See the License for the specific language governing permissions
-   and limitations under the License.
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
