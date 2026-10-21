@@ -87,6 +87,7 @@ ARG TARGETARCH
 # so Trivy no longer reports the CVEs. We keep bash/dash because ONNX
 # Runtime initialization uses /bin/sh internally.
 RUN apt-get update && \
+    apt-get upgrade -y ca-certificates && \
     apt-get install -y --no-install-recommends ca-certificates libstdc++6 && \
     useradd -m -s /usr/sbin/nologin mcpuser && \
     mkdir -p /app/models /app/lib /tmp/mcp-audit && \
