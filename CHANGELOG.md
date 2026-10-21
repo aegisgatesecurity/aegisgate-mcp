@@ -5,6 +5,18 @@ All notable changes to AegisGate MCP are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] — 2026-10-21 - ML Model v15b Update
+
+> **v1.6.1** updates MCP to the v15b ML model (256-char Latin-1) and restores MaxSeqLen=256.
+
+### ML Model v15b
+- Updated `ExpectedModelHash` in `internal/ml/detector.go` to v15b SHA-256: `99187453bedb2b8caf21500d2344f2bbe34272c0b3fd4c610c431378dc2f4fe7`
+- Restored `MaxSeqLen = 256` and `VocabSize = 256` (Latin-1) in `internal/ml/normalizer.go`
+- Updated ONNX model file `models/threat_cnn_bilstm.onnx` to v15b
+- Test expectations updated from 128→256
+
+---
+
 ## [1.6.0] — 2026-10-14 - Moat Deepening: RAG Patterns, Prompt Leakage, Dangerous Functions, Platform Interop
 
 > **v1.6.0** extends MCP's detection coverage from 30 to 91 regex patterns, adds platform interop for pattern pulling and event forwarding, and enhances tool poisoning detection with dangerous function screening. All new features are air-gap compatible — platform interop is opt-in, outbound, config-driven, and fully disabled when `platform_url` is empty.
