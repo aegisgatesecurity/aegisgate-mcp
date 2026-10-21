@@ -117,7 +117,7 @@ external data cause the LLM to execute unintended actions.
   templates, jailbreak attempts, and override commands
 - **L2: ATLAS Compliance Scanner** — input scanner with severity scoring
   (Low/Medium/High/Critical)
-- **L3: Neural ML Detection** — CharCNN-BiLSTM v13 model (1.6M params,
+- **L3: Neural ML Detection** — CharCNN-BiLSTM v15 model (1.6M params,
   <1ms CPU inference) catches semantic attacks and evasion variants that
   regex misses:
   - Leetspeak, Unicode homoglyphs, character transposition

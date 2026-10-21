@@ -21,7 +21,7 @@ between MCP clients (AI agents) and MCP servers (tools), providing 23 security l
 |-------|-----------|------|
 | L1 | Regex pattern matching (30 patterns) | Heuristic |
 | L2 | MITRE ATLAS compliance + input scanner | Heuristic |
-| L3 | CharCNN-BiLSTM neural threat detection (v13) | Neural |
+| L3 | CharCNN-BiLSTM neural threat detection (v15) | Neural |
 | — | Bearer token / API key authentication | Core |
 | — | ECDSA P-256 signature verification | Core |
 | — | Session management with limits | Core |

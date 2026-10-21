@@ -47,7 +47,7 @@ After the build completes you will have an `mcp-server` executable in the curren
 ### Docker
 
 A `Dockerfile` is included for containerized deployments. The default build
-includes the vendored ONNX Runtime and CharCNN-BiLSTM v13 model for full
+includes the vendored ONNX Runtime and CharCNN-BiLSTM v15 model for full
 neural threat detection:
 
 ```bash

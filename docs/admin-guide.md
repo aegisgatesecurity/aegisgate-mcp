@@ -519,7 +519,7 @@ Both modes can be enabled simultaneously. When both are active, block rules are 
 
 ## 7a. ML Threat Detection (L3 — Neural)
 
-AegisGate MCP includes a CharCNN-BiLSTM v13 neural model that detects
+AegisGate MCP includes a CharCNN-BiLSTM v15 neural model that detects
 semantic attacks and evasion variants that regex pattern matching cannot
 catch. This is the same model used by AegisGate Platform and Rampart,
 vendored with zero external module dependencies.

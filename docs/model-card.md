@@ -4,15 +4,15 @@
 
 ## Model Details
 
-- **Model name**: AegisGate Threat Detector v13 (shared model)
+- **Model name**: AegisGate Threat Detector v15 (shared model)
 - **Model type**: Character CNN-BiLSTM with Attention
-- **Version**: v13 (char-cnn-bilstm-v13)
-- **Release date**: 2026-09-23
+- **Version**: v15 (char-cnn-bilstm-v15)
+- **Release date**: 2026-10-20
 - **License**: Apache 2.0
 - **Architecture**: 1,596,034 parameters, character-level input (256 chars max),
-  Latin-1 vocabulary (256 tokens), ~6.2MB ONNX export (float32)
+  Latin-1 vocabulary (256 tokens), ~6.1MB ONNX export (float32)
 - **Inference**: <1ms CPU inference via vendored ONNX Runtime (Go + CGO)
-- **SHA-256**: `329fd89afe153d0b9f01143c50a9a2dd73b1d3613cc87a07b4b83a93172aeaf0`
+- **SHA-256**: `99187453bedb2b8caf21500d2344f2bbe34272c0b3fd4c610c431378dc2f4fe7`
 - **Location**: `models/threat_cnn_bilstm.onnx`
 
 > **Note:** This is the same model used by AegisGate Platform and Rampart.
@@ -32,9 +32,9 @@
 
 | Metric | Value |
 |--------|-------|
-| True Positive Rate (TPR) | 99.45% (test set), 99.57% (production, 8.5M requests) |
-| False Positive Rate (FPR) | 0.85% (test set), 0.00% (production, 8.5M requests) |
-| F1 Score | 0.9841 |
+| True Positive Rate (TPR) | 93.48% (test set), 100/100 evasion (full pipeline) |
+| False Positive Rate (FPR) | 0.49% (test set), 0.00% (production, full pipeline) |
+| F1 Score | 95.78% |
 | Evasion Resistance | 100/100 |
 | Incremental TPR (L3 over L1+L2) | 97.6% (catches 41 attacks regex misses) |
 | Incremental FPR (L3 over L1+L2) | 0.00% (zero additional false positives) |

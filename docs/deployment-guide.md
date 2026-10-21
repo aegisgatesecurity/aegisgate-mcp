@@ -158,7 +158,7 @@ curl http://127.0.0.1:8082/healthz
 
 AegisGate MCP uses `debian:bookworm-slim` as the base image with CGO enabled
 for full neural threat detection. The final image is approximately 135 MB and
-includes the vendored ONNX Runtime and CharCNN-BiLSTM v13 model. A lighter
+includes the vendored ONNX Runtime and CharCNN-BiLSTM v15 model. A lighter
 heuristic-only image (~8 MB) can be built with `--build-arg CGO_ENABLED=0`.
 
 The image runs as a non-root user (`mcpuser`) with shell disabled.

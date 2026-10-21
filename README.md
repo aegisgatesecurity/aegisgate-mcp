@@ -7,15 +7,15 @@
 
 *A hardened, zero-dependency MCP server written in pure Go. Build your MCP server on a foundation that has security built in from line one — not bolted on after a breach.*
 
-Apache 2.0 · 23 security layers · 79 regex patterns + CharCNN-BiLSTM (v13) ML detection · Zero CVEs · Zero external module dependencies
+Apache 2.0 · 23 security layers · 79 regex patterns + CharCNN-BiLSTM (v15) ML detection · Zero CVEs · Zero external module dependencies
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Go](https://img.shields.io/badge/Go-1.26.9-00ADD8?logo=go)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.27.3-00ADD8?logo=go)](https://golang.org/)
 [![Version](https://img.shields.io/badge/Version-1.6.1-blue.svg)](#changelog)
 [![Coverage](https://img.shields.io/badge/Coverage-92.0%25-brightgreen.svg)](#test-coverage)
 [![Dependencies](https://img.shields.io/badge/Dependencies-Zero-success.svg)](#overview)
 [![Docker](https://img.shields.io/badge/Docker-Distroless_0_CVEs-blue.svg)](#docker)
-[![ML](https://img.shields.io/badge/ML-CharCNN--BiLSTM_v13-purple.svg)](#ml-threat-detection-l3)
+[![ML](https://img.shields.io/badge/ML-CharCNN--BiLSTM_v15-purple.svg)](#ml-threat-detection-l3)
 [![Arch](https://img.shields.io/badge/Arch-amd64%20%7C%20arm64-orange.svg)](#build)
 [![CI](https://github.com/aegisgatesecurity/aegisgate-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/aegisgatesecurity/aegisgate-mcp/actions/workflows/ci.yml)
 [![Security](https://github.com/aegisgatesecurity/aegisgate-mcp/actions/workflows/security.yml/badge.svg)](https://github.com/aegisgatesecurity/aegisgate-mcp/actions/workflows/security.yml)
@@ -87,11 +87,11 @@ dependencies so it can run air-gapped.
 |---|---|
 | **Version** | 1.6.1 |
 | **License** | Apache-2.0 |
-| **Go version** | 1.26+ |
+| **Go version** | 1.27+ |
 | **Module deps** | Zero (no `require` directives — all third-party code vendored) |
 | **Docker image** | ML: `debian:bookworm-slim` (gnutls purged), ~127 MB, 0 CVEs · Lite: `distroless/static-debian12`, ~10 MB, 0 CVEs |
 | **Architectures** | amd64, arm64 |
-| **ML model** | CharCNN-BiLSTM v13, 1.6M params, <1ms CPU inference |
+| **ML model** | CharCNN-BiLSTM v15, 1.6M params, <1ms CPU inference |
 | **Tests** | 611 unit/integration + 32 load/stress = 643 total, 14 benchmarks, 3 fuzz targets, 92.0% coverage (non-CGO) / 91.9% (CGO) |
 
 ---
@@ -158,7 +158,7 @@ both `linux/amd64` and `linux/arm64`.
 
 ### ML Threat Detection (L3)
 
-AegisGate MCP includes the same CharCNN-BiLSTM v13 neural model used by
+AegisGate MCP includes the same CharCNN-BiLSTM v15 neural model used by
 AegisGate Platform and Rampart — vendored with zero external module
 dependencies. The model provides:
 
@@ -296,7 +296,7 @@ AegisGate MCP applies 23 security layers to every request, in order:
 | 16 | **stdio Transport** | Standard MCP client transport for Claude Desktop, Cursor, and other local integrations | `transport.go` |
 | 17 | **Health Endpoint** | HTTP `/healthz`, `/readyz`, `/stats` endpoints on a separate listener | `transport.go` |
 | 18 | **Parameter Validation** | Required fields checked against each tool's `inputSchema` before execution | `handler.go` |
-| 19 | **Neural Threat Detection (L3)** | CharCNN-BiLSTM v13 model scores semantic attacks and evasion variants that regex misses. Two-tier blocking: ≥0.95 blocks independently, 0.50–0.94 requires L1/L2 corroboration | `internal/ml/` |
+| 19 | **Neural Threat Detection (L3)** | CharCNN-BiLSTM v15 model scores semantic attacks and evasion variants that regex misses. Two-tier blocking: ≥0.95 blocks independently, 0.50–0.94 requires L1/L2 corroboration | `internal/ml/` |
 | 20 | **Heuristic Evasion Detection** | Detects transposition, vowel deletion, word reversal, leetspeak, encoding, splitting, and zero-width character obfuscation | `internal/ml/evasion_resistance.go` |
 | 21 | **NFKC Unicode Normalization** | Maps Unicode compatibility characters to canonical forms before scanning — defeats homoglyph and ligature attacks (full-width `Ｉｇｎｏｒｅ` → `ignore`) | `internal/ml/normalizer.go` |
 | 22 | **Tool Poisoning Detection** | Scans tool descriptions and `inputSchema` recursively for prompt injection (34 dangerous function patterns from AegisGate Scanner) at registration time — rejects poisoned tools before they're callable. Maps to OWASP MCP Top 10 M1 | `handler.go` |
@@ -633,7 +633,7 @@ go 1.26.9
 | onnxruntime_go (Go bindings) | MIT | `internal/onnxruntime_go/` |
 | libonnxruntime.so (Microsoft) | MIT | `lib/amd64/`, `lib/arm64/` |
 | golang.org/x/text (Unicode norm) | BSD-3-Clause | `internal/textnorm/` |
-| CharCNN-BiLSTM v13 model | Apache-2.0 | `models/` |
+| CharCNN-BiLSTM v15 model | Apache-2.0 | `models/` |
 
 **Why this matters:**
 

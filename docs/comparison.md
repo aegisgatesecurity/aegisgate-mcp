@@ -18,7 +18,7 @@
 | **Policy engine** | ❌ | ❌ | ❌ | ✅ Allow/deny + conditions + time windows |
 | **Audit logging** | ❌ | ❌ | ❌ | ✅ Tamper-evident hash chain |
 | **Threat detection (regex)** | ❌ | ❌ | ✅ Basic | ✅ 30 patterns |
-| **Threat detection (ML)** | ❌ | ❌ | ❌ | ✅ CharCNN-BiLSTM v13 |
+| **Threat detection (ML)** | ❌ | ❌ | ❌ | ✅ CharCNN-BiLSTM v15 |
 | **Tool poisoning detection** | ❌ | ❌ | ❌ | ✅ Registration-time scan |
 | **Response scanning** | ❌ | ❌ | ✅ Basic | ✅ PII + secrets + XSS + injection |
 | **Secret redaction** | ❌ | ❌ | ❌ | ✅ Configurable |
@@ -76,7 +76,7 @@ AegisGate MCP is built from the ground up as a security-first framework:
 - **22 security layers** integrated into the request pipeline — not bolted on
 - **Zero external dependencies** — no `require` directives in go.mod, all
   third-party code vendored into `internal/`
-- **ML threat detection** — CharCNN-BiLSTM v13 neural model with <1ms CPU
+- **ML threat detection** — CharCNN-BiLSTM v15 neural model with <1ms CPU
   inference, the same model used by AegisGate Platform and Rampart
 - **Tool poisoning detection** — scans tool descriptions and input schemas
   for prompt injection at registration time, before the tool is ever callable
