@@ -49,6 +49,10 @@ make test-all
 6. Commit with DCO sign-off (`git commit -s`)
 7. Open a pull request with a clear description
 
+## Code of Conduct
+
+This project and everyone participating in it is governed by the [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code. Please report unacceptable behavior to [conduct@aegisgatesecurity.io](mailto:conduct@aegisgatesecurity.io).
+
 ## Security Issues
 
 **Do not open public issues for security vulnerabilities.**
