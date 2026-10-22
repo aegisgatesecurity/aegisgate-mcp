@@ -9,6 +9,9 @@
 
 Apache 2.0 · 23 security layers · 79 regex patterns + CharCNN-BiLSTM (v15) ML detection · Zero CVEs · Zero external module dependencies
 
+[![GitHub stars](https://img.shields.io/github/stars/aegisgatesecurity/aegisgate-mcp?style=flat&logo=github&label=Star&color=FFD700&labelColor=181717&logoColor=FFD700)](https://github.com/aegisgatesecurity/aegisgate-mcp)
+**Found AegisGate MCP useful? [Star the repo](https://github.com/aegisgatesecurity/aegisgate-mcp) ⭐ and [tell a colleague](https://x.com/intent/tweet?text=Securing%20my%20MCP%20servers%20with%20AegisGate%20%E2%80%94%2023%20security%20layers%2C%20zero%20dependencies%2C%20ML%20threat%20detection%3A%20https%3A%2F%2Fgithub.com%2Faegisgatesecurity%2Faegisgate-mcp) — it helps other devs discover secure MCP tooling.**
+
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Go](https://img.shields.io/badge/Go-1.27.3-00ADD8?logo=go)](https://golang.org/)
 [![Version](https://img.shields.io/badge/Version-1.6.1-blue.svg)](#changelog)
@@ -27,7 +30,6 @@ Apache 2.0 · 23 security layers · 79 regex patterns + CharCNN-BiLSTM (v15) ML 
 
 [Quick Start](#quick-start) · [Security Layers](#security-layers) · [RBAC](#rbac-roles) · [Architecture](#architecture) · [Protocol](#mcp-protocol-support) · [Docs](#documentation) · [Releases](https://github.com/aegisgatesecurity/aegisgate-mcp/releases)
 
-[![GitHub stars](https://img.shields.io/github/stars/aegisgatesecurity/aegisgate-mcp?style=flat&logo=github&label=Stars&color=fafafa&labelColor=fcfcfc&logoColor=181717)](https://github.com/aegisgatesecurity/aegisgate-mcp) — **If AegisGate MCP helps you secure your AI agents, please consider ⭐ starring this repo. It helps others discover it.**
 
 </div>
 
