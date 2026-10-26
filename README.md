@@ -900,7 +900,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). All commits must be signed off (`git com
 
 ## IP Notice
 
-AegisGate's core technologies are patent pending with the USPTO (Provisional App. Nos. 64/153,573–64/153,577, filed September 12, 2026; 64/174,824, filed October 12, 2026; and 64/180,722, filed October 20, 2026). Source code is © 2025-2026 AegisGate Security, LLC. Licensed under Apache 2.0.
+AegisGate's core technologies are patent pending with the USPTO (Provisional App. Nos. 64/153,573–64/153,577, filed September 12, 2026; 64/174,824, filed October 12, 2026; and 64/180,722, filed October 20, 2026; and 64/184,057, filed October 26, 2026). Source code is © 2025-2026 AegisGate Security, LLC. Licensed under Apache 2.0.
 
 ---
 
