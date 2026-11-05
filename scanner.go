@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/aegisgatesecurity/aegisgate-mcp/internal/evasion"
 )
 
 // Severity levels for findings.
@@ -85,6 +87,8 @@ func NewContentScannerWithPatterns(patterns []*Pattern) *ContentScanner {
 
 // Scan scans content and returns all findings.
 func (s *ContentScanner) Scan(content string) []Finding {
+	// Scan original content first — preserves exact match positions for
+	// redaction, logging, and reporting.
 	var findings []Finding
 	for _, p := range s.patterns {
 		if p.Regex == nil {
@@ -99,6 +103,46 @@ func (s *ContentScanner) Scan(content string) []Finding {
 			})
 		}
 	}
+
+	// If original content already has critical findings, no need to check variants.
+	if s.HasCriticalFindings(findings) {
+		return findings
+	}
+
+	// Scan normalized variants for evasion-resistant detection.
+	// This catches fullwidth Unicode, l33t speak, and character-level spacing
+	// evasions that bypass the original content regex matching.
+	// Skip variant[0] (original) since we already scanned it above.
+	variants := evasion.NormalizeAllVariants(content)
+	for _, v := range variants[1:] {
+		if v == "" || v == content {
+			continue
+		}
+		for _, p := range s.patterns {
+			if p.Regex == nil {
+				continue
+			}
+			loc := p.Regex.FindStringIndex(v)
+			if loc != nil {
+				// Check we haven't already found this pattern
+				alreadyFound := false
+				for _, f := range findings {
+					if f.Pattern.Name == p.Name {
+						alreadyFound = true
+						break
+					}
+				}
+				if !alreadyFound {
+					findings = append(findings, Finding{
+						Pattern:  p,
+						Match:    v[loc[0]:loc[1]],
+						Position: loc[0],
+					})
+				}
+			}
+		}
+	}
+
 	return findings
 }
 

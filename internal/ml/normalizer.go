@@ -24,6 +24,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/aegisgatesecurity/aegisgate-mcp/internal/evasion"
 	"github.com/aegisgatesecurity/aegisgate-mcp/internal/textnorm/norm"
 )
 
@@ -60,15 +61,23 @@ func NewCharNormalizer() *CharNormalizer {
 //     canonical forms, so "ⅴ" (U+2174) → "v" (U+0076) and "ﬁ" (U+FB01)
 //     → "fi". Without this, adversarial inputs using Unicode tricks
 //     bypass the model's detection.
-//  2. Convert to lowercase
-//  3. Strip leading/trailing whitespace
-//  4. Collapse multiple whitespace
-//  5. Truncate to max length
+//  2. Apply evasion normalization (homoglyphs, context-aware l33t, despaced)
+//     — catches fullwidth Unicode, l33t speak, and char-level spacing that
+//     NFKC alone doesn't handle. Unified with Platform/Rampart/Scanner.
+//  3. Convert to lowercase
+//  4. Strip leading/trailing whitespace
+//  5. Collapse multiple whitespace
+//  6. Truncate to max length
 func (cn *CharNormalizer) Normalize(text string) string {
 	// NFKC normalization — canonical decomposition + composition.
 	// This maps compatibility characters and homoglyphs to their
 	// canonical ASCII equivalents where possible.
 	text = norm.NFKC.String(text)
+
+	// Evasion normalization — homoglyphs, l33t speak, despaced text.
+	// Applied after NFKC to catch what NFKC doesn't (fullwidth Latin,
+	// l33t substitutions, character-level spacing).
+	text = evasion.NormalizeText(text)
 
 	// Lowercase
 	text = strings.ToLower(text)
