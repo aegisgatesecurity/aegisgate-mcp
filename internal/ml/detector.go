@@ -35,7 +35,7 @@ import (
 	"sync"
 )
 
-// ExpectedModelHash is the SHA-256 hash of the v15 threat detection model
+// ExpectedModelHash is the SHA-256 hash of the v22b threat detection model
 // (threat_cnn_bilstm.onnx). If the model file hash does not match, the
 // detector refuses to load it — preventing supply-chain tampering.
 // v15b: 99187453bedb2b8caf21500d2344f2bbe34272c0b3fd4c610c431378dc2f4fe7
@@ -44,7 +44,7 @@ import (
 // v11:  32b7db74379b28a0e3da5a79e42c0ecedab29b66463c26a8cf2081a731facc91
 // v10:  8f874aa5a0d01a8acaa8449ba68c82d8bc0bc984744d9cf8a68ce900b83f2e56
 // v9:   0076b66d069ca445589526624ebeb67b65a1df68d615525b83e528f03e0bd4b7
-const ExpectedModelHash = "99187453bedb2b8caf21500d2344f2bbe34272c0b3fd4c610c431378dc2f4fe7"
+const ExpectedModelHash = "948b650023984f4c24a8ea59665dcff021742bf887cfc1142b3553d57ac1460e"
 
 // ExpectedONNXRuntimeHashes maps GOARCH to the expected SHA-256 hash of the
 // vendored ONNX Runtime shared library (libonnxruntime.so v1.29.0). If the
@@ -107,8 +107,38 @@ func (td *ThreatDetector) Detect(text string) ThreatScore {
 		}
 	}
 
-	encoded := td.normalizer.Encode(text)
-	score := td.inference(encoded)
+	// Sliding window inference: for inputs longer than MaxSeqLen, scan
+	// overlapping 256-char windows (50% overlap, max 8 windows) and take
+	// the highest score (max aggregation).
+	normalized := td.normalizer.NormalizeFull(text)
+	runes := []rune(normalized)
+
+	var score float64
+	if len(runes) <= MaxSeqLen {
+		encoded := td.normalizer.EncodeRaw(normalized)
+		score = td.inference(encoded)
+	} else {
+		stride := MaxSeqLen / 2
+		maxWindows := 8
+		windowCount := 0
+		for start := 0; start < len(runes) && windowCount < maxWindows; start += stride {
+			end := start + MaxSeqLen
+			if end > len(runes) {
+				end = len(runes)
+			}
+			window := string(runes[start:end])
+			encoded := td.normalizer.EncodeRaw(window)
+			windowScore := td.inference(encoded)
+			if windowScore > score {
+				score = windowScore
+			}
+			windowCount++
+			if end == len(runes) {
+				break
+			}
+		}
+	}
+
 	isThreat := score >= td.config.Threshold
 
 	result := ThreatScore{
