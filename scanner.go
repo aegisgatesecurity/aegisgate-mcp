@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/aegisgatesecurity/aegisgate-mcp/internal/evasion"
 )
 
 // Severity levels for findings.
@@ -85,6 +87,8 @@ func NewContentScannerWithPatterns(patterns []*Pattern) *ContentScanner {
 
 // Scan scans content and returns all findings.
 func (s *ContentScanner) Scan(content string) []Finding {
+	// Scan original content first — preserves exact match positions for
+	// redaction, logging, and reporting.
 	var findings []Finding
 	for _, p := range s.patterns {
 		if p.Regex == nil {
@@ -99,6 +103,46 @@ func (s *ContentScanner) Scan(content string) []Finding {
 			})
 		}
 	}
+
+	// If original content already has critical findings, no need to check variants.
+	if s.HasCriticalFindings(findings) {
+		return findings
+	}
+
+	// Scan normalized variants for evasion-resistant detection.
+	// This catches fullwidth Unicode, l33t speak, and character-level spacing
+	// evasions that bypass the original content regex matching.
+	// Skip variant[0] (original) since we already scanned it above.
+	variants := evasion.NormalizeAllVariants(content)
+	for _, v := range variants[1:] {
+		if v == "" || v == content {
+			continue
+		}
+		for _, p := range s.patterns {
+			if p.Regex == nil {
+				continue
+			}
+			loc := p.Regex.FindStringIndex(v)
+			if loc != nil {
+				// Check we haven't already found this pattern
+				alreadyFound := false
+				for _, f := range findings {
+					if f.Pattern.Name == p.Name {
+						alreadyFound = true
+						break
+					}
+				}
+				if !alreadyFound {
+					findings = append(findings, Finding{
+						Pattern:  p,
+						Match:    v[loc[0]:loc[1]],
+						Position: loc[0],
+					})
+				}
+			}
+		}
+	}
+
 	return findings
 }
 
@@ -185,7 +229,8 @@ func (s *ContentScanner) ScanResponse(response string, blockOnPII, blockOnSecret
 func defaultScannerPatterns() []*Pattern {
 	return []*Pattern{
 		// === Prompt Injection (11) ===
-		{Name: "PromptInjectionCommand", Regex: regexp.MustCompile(`(?i)(ignore|disregard|forget)\s+(previous|prior|all|above)\s+(instructions?|prompts?|rules?)`), Severity: SeverityCritical, Category: CatPrompt, Description: "Command to ignore instructions"},
+		{Name: "PromptInjectionCommand", Regex: regexp.MustCompile(`(?i)(ignore|disregard|forget)\s+(?:all\s+|any\s+)?(?:previous|prior|above)\s+(?:instructions?|prompts?|rules?)`), Severity: SeverityCritical, Category: CatPrompt, Description: "Command to ignore instructions"},
+		{Name: "PromptInjectionIgnoreAll", Regex: regexp.MustCompile(`(?i)(ignore|disregard|forget)\s+(?:all\s+)?(?:instructions?|prompts?|rules?|safety|guidelines?|restrictions?)`), Severity: SeverityCritical, Category: CatPrompt, Description: "Command to ignore instructions or safety"},
 		{Name: "PromptInjectionRolePlay", Regex: regexp.MustCompile(`(?i)(pretend|act as|role.?play|you are)\s+(a|an)?\s*(root|admin|sudo|developer)`), Severity: SeverityCritical, Category: CatPrompt, Description: "Role-play to escalate privileges"},
 		{Name: "PromptInjectionLeakage", Regex: regexp.MustCompile(`(?i)(reveal|show|print|output|leak)\s+(your|the|system|initial)\s+(instructions?|prompt|rules?|config)`), Severity: SeverityCritical, Category: CatPrompt, Description: "Attempt to leak system prompt"},
 		{Name: "PromptInjectionCodeExec", Regex: regexp.MustCompile(`(?i)(execute|run|eval|exec)\s+(this|the following)\s+(code|command|script)`), Severity: SeverityCritical, Category: CatPrompt, Description: "Code execution via prompt"},
@@ -203,13 +248,24 @@ func defaultScannerPatterns() []*Pattern {
 		{Name: "GenericAPIKey", Regex: regexp.MustCompile(`(?i)(api[_-]?key|apikey)\s*[=:]\s*[A-Za-z0-9]{32,}`), Severity: SeverityHigh, Category: CatCredential, Description: "Generic API key"},
 		{Name: "JWTToken", Regex: regexp.MustCompile(`eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}`), Severity: SeverityCritical, Category: CatCredential, Description: "JWT token"},
 		{Name: "RSAPrivateKey", Regex: regexp.MustCompile(`-----BEGIN (RSA |EC |OPENSSH |)PRIVATE KEY-----`), Severity: SeverityCritical, Category: CatCredential, Description: "Private key"},
+		{Name: "StripeSecretKey", Regex: regexp.MustCompile(`sk_live_[A-Za-z0-9]{20,}`), Severity: SeverityCritical, Category: CatCredential, Description: "Stripe live secret key"},
+		{Name: "StripePublishableKey", Regex: regexp.MustCompile(`pk_live_[A-Za-z0-9]{20,}`), Severity: SeverityHigh, Category: CatCredential, Description: "Stripe live publishable key"},
+		{Name: "DBConnectionString", Regex: regexp.MustCompile(`(?i)(?:postgres(?:ql)?|mysql|mongodb|redis)://[^:\s]+:[^@\s]+@`), Severity: SeverityCritical, Category: CatCredential, Description: "Database connection string with credentials"},
+		{Name: "SlackToken", Regex: regexp.MustCompile(`xox[baprs]-[A-Za-z0-9-]{10,}`), Severity: SeverityCritical, Category: CatCredential, Description: "Slack API token"},
+		{Name: "GoogleAPIKey", Regex: regexp.MustCompile(`AIza[0-9A-Za-z_-]{35}`), Severity: SeverityCritical, Category: CatCredential, Description: "Google API key"},
+		{Name: "GenericSecretInJSON", Regex: regexp.MustCompile(`(?i)(?:secret|password|passwd|token|key)\s*"\s*:\s*"\S{8,}"`), Severity: SeverityHigh, Category: CatCredential, Description: "Secret value in JSON"},
 
 		// === PII (key patterns) ===
-		{Name: "CreditCardVisa", Regex: regexp.MustCompile(`4[0-9]{12}(?:[0-9]{3})?`), Severity: SeverityCritical, Category: CatFinancial, Description: "Visa credit card number"},
+		{Name: "CreditCardVisa", Regex: regexp.MustCompile(`4[0-9]{12}(?:[0-9]{3})?|4[0-9]{3}[-\s]?[0-9]{4}[-\s]?[0-9]{4}[-\s]?[0-9]{4}`), Severity: SeverityCritical, Category: CatFinancial, Description: "Visa credit card number"},
+		{Name: "CreditCardMastercardHyphen", Regex: regexp.MustCompile(`5[1-5][0-9]{2}[-\s]?[0-9]{4}[-\s]?[0-9]{4}[-\s]?[0-9]{4}`), Severity: SeverityCritical, Category: CatFinancial, Description: "Mastercard number (hyphenated)"},
 		{Name: "CreditCardMastercard", Regex: regexp.MustCompile(`5[1-5][0-9]{14}`), Severity: SeverityCritical, Category: CatFinancial, Description: "Mastercard number"},
 		{Name: "CreditCardAmex", Regex: regexp.MustCompile(`3[47][0-9]{13}`), Severity: SeverityCritical, Category: CatFinancial, Description: "Amex credit card number"},
 		{Name: "USSSN", Regex: regexp.MustCompile(`\b[0-9]{3}-[0-9]{2}-[0-9]{4}\b`), Severity: SeverityHigh, Category: CatPII, Description: "US Social Security Number"},
 		{Name: "EmailPII", Regex: regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`), Severity: SeverityMedium, Category: CatPII, Description: "Email address"},
+		{Name: "PIIMedicalRecordNumber", Regex: regexp.MustCompile(`(?i)\b(?:MRN|medical.?record.?number)\s*[:=]?\s*[A-Z]?[0-9]{6,10}\b`), Severity: SeverityHigh, Category: CatPII, Description: "Medical record number"},
+		{Name: "PIIMedicalDiagnosis", Regex: regexp.MustCompile(`(?i)\b(?:diagnosis|condition|ailment|symptom)\s*[:=]?\s*[A-Z]`), Severity: SeverityMedium, Category: CatPII, Description: "Medical diagnosis in tool call"},
+		{Name: "PIIPatientHealthInfo", Regex: regexp.MustCompile(`(?i)\b(?:HIV|AIDS|CD4|chemotherapy|radiation|psychiatric|depression|bipolar|schizophrenia)\b`), Severity: SeverityHigh, Category: CatPII, Description: "Patient health information in tool call"},
+		{Name: "PIIPhoneNumber", Regex: regexp.MustCompile(`(?:\+\d{1,3}[-.\s]\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})|(?:\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4})`), Severity: SeverityMedium, Category: CatPII, Description: "Phone number in tool call"},
 
 		// === XSS (key patterns) ===
 		{Name: "XSSScriptTag", Regex: regexp.MustCompile(`(?i)<script[^>]*>.*?</script>`), Severity: SeverityCritical, Category: CatXSS, Description: "Script tag XSS"},
@@ -225,6 +281,14 @@ func defaultScannerPatterns() []*Pattern {
 		{Name: "OWASP_LLM01_PromptInjection", Regex: regexp.MustCompile(`(?i)(jailbreak|dan\s+prompt|do anything now)`), Severity: SeverityCritical, Category: CatCompliance, Description: "OWASP LLM01: Prompt injection"},
 		{Name: "OWASP_LLM02_InsecureOutput", Regex: regexp.MustCompile(`(?i)document\.write\s*\(`), Severity: SeverityHigh, Category: CatCompliance, Description: "OWASP LLM02: Insecure output handling"},
 		{Name: "OWASP_LLM06_SensitiveInfo", Regex: regexp.MustCompile(`(?i)(ssn|social security|credit card|passport number)\s*[:=]`), Severity: SeverityHigh, Category: CatCompliance, Description: "OWASP LLM06: Sensitive information disclosure"},
+
+		// === ATLAS L2 Patterns (synced from Platform v3.6.0) ===
+		{Name: "ATLAS_T1552_005_SecretDisclosure", Regex: regexp.MustCompile(`(?i)((?:what\s+is|what\s+are|what's|what\s+would|show\s+me|reveal|tell\s+me|give\s+me|i\s+need|display|output|print|share|send\s+me)\s+(?:the\s+)?(?:(?:first|second|third|fourth|fifth|last|next|previous)\s+(?:digit|character|char|letter|byte|bit|part|half|number)\s+of\s+(?:the\s+)?)?(?:admin\s+|master\s+|root\s+|database\s+|system\s+|hidden\s+|secret\s+|private\s+|encryption\s+|ssh\s+|2fa\s+|jwt\s+|oauth\s+|stripe\s+|github\s+|slack\s+|gcp\s+|aws\s+)?(?:password|passcode|pass\s*code|secret\s+key|private\s+key|api\s+key|access\s+key|secret\s+token|auth\s+token|bearer\s+token|encryption\s+key|ssh\s+key|backup\s+code|client\s+secret|webhook\s+(?:url|secret)|service\s+account\s+(?:json|token|key)|(?:master|admin|root)\s+key|access\s+token|auth(?:orization)?\s+(?:code|token)|admin\s+pin|\bpin\b|(?:aws|api|secret|access|private)\s+keys?)\b)`), Severity: SeverityCritical, Category: CatCompliance, Description: "ATLAS T1552.005: Direct secret disclosure request"},
+		{Name: "ATLAS_T1589_006_ModelArchExtraction", Regex: regexp.MustCompile(`(?i)(how\s+many\s+(?:layers|parameters|neurons|weights)\s+(?:does|do|are)\s+(?:your|this|the)\s+(?:neural\s+network|model|network)\s+have|(?:what\s+is|describe|tell\s+me)\s+your\s+(?:architecture|model\s+architecture|embedding\s+dimension|hidden\s+size|attention\s+mechanism|activation\s+function|loss\s+function|tokenizer|model.s\s+learning\s+rate|optimization\s+process|training\s+data\s+distribution|model\s+size|maximum\s+sequence\s+length|vocabulary\s+size)|list\s+all\s+the\s+weights\s+in\s+your|what\s+(?:vocabulary\s+size|activation\s+function|loss\s+function|embedding\s+dimension|hidden\s+size|maximum\s+sequence\s+length|model\s+size)\s+(?:does|do)\s+(?:your|this|the)\s+(?:model|network|ai)\s+(?:use|have)|what\s+(?:activation\s+function|loss\s+function|tokenizer)\s+do\s+you\s+use|how\s+were\s+you\s+trained|what\s+is\s+the\s+dimension\s+of\s+your\s+embeddings)`), Severity: SeverityCritical, Category: CatCompliance, Description: "ATLAS T1589.006: Model architecture interrogation"},
+		{Name: "ATLAS_T1548_004_InsiderThreat", Regex: regexp.MustCompile(`(?i)(disable\s+logging\s+on\s+(?:the\s+)?(?:production|main|primary)\s+(?:database|server|system)|bypass\s+(?:the\s+)?(?:approval\s+workflow|change\s+management\s+process)|modify\s+(?:the\s+)?payroll\s+system|add\s+(?:my\s+)?ssh\s+key\s+to\s+(?:the\s+)?root|remove\s+(?:the\s+)?ip\s+whitelist|change\s+(?:the\s+)?firewall\s+rules\s+to\s+allow\s+all|create\s+(?:a\s+)?(?:backdoor|hidden)\s+(?:admin\s+)?account|set\s+up\s+mail\s+forwarding\s+for\s+(?:the\s+)?ceo|elevate\s+(?:my\s+)?permissions?\s+to\s+(?:superuser|root|admin)|create\s+(?:a\s+)?vpn\s+tunnel\s+to\s+an\s+external|override\s+(?:the\s+)?(?:approval\s+workflow|change\s+management)|create\s+(?:a\s+)?scheduled\s+task\s+to\s+exfiltrat\w+|set\s+up\s+mail\s+forwarding\s+for\s+(?:the\s+)?ceo)`), Severity: SeverityCritical, Category: CatCompliance, Description: "ATLAS T1548.004: Insider threat action request"},
+		{Name: "ATLAS_T1648_002_MaliciousCode", Regex: regexp.MustCompile(`(?i)((?:write|create)\s+(?:code|a\s+script|a\s+python\s+script|javascript|a\s+bash\s+script|a\s+dns\s+exfiltration\s+script)\s+(?:that|to)\s+(?:steal|dump|intercept|connect\s+to\s+(?:a\s+)?c2|download\s+(?:and\s+execute\s+)?malware|exfiltrat\w+|phones?\s+home|log\s+all\s+network|extract\s+(?:api\s+keys?|credentials?|secrets?|tokens?)\s+from\s+(?:process\s+)?memory)|(?:write|create)\s+(?:a\s+)?(?:python\s+)?script\s+that\s+connects?\s+to\s+(?:a\s+)?c2|(?:write|create)\s+(?:a\s+)?cron\s+job\s+that\s+phones?\s+home|generate\s+(?:a\s+)?(?:zip\s+bomb|reverse\s+shell|macro\s+that\s+downloads\s+malware)|dns\s+exfiltration\s+script)`), Severity: SeverityCritical, Category: CatCompliance, Description: "ATLAS T1648.002: Malicious code generation request"},
+		{Name: "ATLAS_T1498_004_ResourceExhaustion", Regex: regexp.MustCompile(`(?i)(catastrophic\s+backtracking|zip\s+bomb|infinitely\s+recursive\s+(?:function|loop)|cartesian\s+product\s+on\s+(?:a\s+)?(?:large|big)\s+table|generate\s+all\s+possible\s+\w+\s+character\s+passwords|generate\s+(?:a\s+)?(?:100,?000|one\s+hundred\s+thousand)\s+word\s+essay)`), Severity: SeverityCritical, Category: CatCompliance, Description: "ATLAS T1498.004: Resource exhaustion via algorithmic complexity"},
+		{Name: "ATLAS_T1535_003_Roleplay", Regex: regexp.MustCompile(`(?i)(role\s*play\s+(?:as|that|where|mode|scenario)|play\s+the\s+role\s+of|simulate\s+(?:being|an?)|imagine\s+(you|i)\s+(are|were)|let's\s+play\s+(a|an)|as\s+(an?|a)\s+(fictional|hypothetical)|character\s+mode|scenario\s+mode)`), Severity: SeverityHigh, Category: CatCompliance, Description: "ATLAS T1535.003: Prompt injection via role play"},
 
 		// === Dangerous Functions (34 patterns) ===
 		// Provenance: github.com/aegisgatesecurity/aegisgate-scanner/pkg/detectors/dangerous_functions.go
@@ -255,6 +319,10 @@ func defaultScannerPatterns() []*Pattern {
 		{Name: "DangerousJsInnerHTML", Regex: regexp.MustCompile(`\.innerHTML\s*=`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "innerHTML assignment can inject scripts"},
 		// --- Cross-language ---
 		{Name: "DangerousSqlInjection", Regex: regexp.MustCompile(`(?i)(SELECT|INSERT|UPDATE|DELETE|DROP|UNION)\s+.*\+.*\+`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "SQL query with string concatenation (injection risk)"},
+		{Name: "SQLInjectionDropTable", Regex: regexp.MustCompile(`(?i)(?:'|")\s*;\s*DROP\s+TABLE`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "SQL injection: DROP TABLE"},
+		{Name: "SQLInjectionUnionSelect", Regex: regexp.MustCompile(`(?i)UNION\s+(?:ALL\s+)?SELECT`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "SQL injection: UNION SELECT"},
+		{Name: "SQLInjectionOr1Eq1", Regex: regexp.MustCompile(`(?i)OR\s+1\s*=\s*1`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "SQL injection: OR 1=1"},
+		{Name: "SQLInjectionComment", Regex: regexp.MustCompile(`--\s*$`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "SQL comment terminator (injection indicator)"},
 		{Name: "DangerousCommandInjection", Regex: regexp.MustCompile(`(?i)(system|exec|popen|backticks|` + "`" + `)\s*\(`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "Command execution function"},
 		// --- Network endpoints in code ---
 		{Name: "DangerousHardcodedUrlHttp", Regex: regexp.MustCompile(`http://[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`), Severity: SeverityMedium, Category: CatDangerousFunction, Description: "Hardcoded HTTP URL (no TLS)"},
@@ -270,8 +338,12 @@ func defaultScannerPatterns() []*Pattern {
 		{Name: "DangerousJsAtob", Regex: regexp.MustCompile(`\batob\s*\(`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "atob() decodes base64 — common in obfuscated payloads"},
 		{Name: "DangerousB64EnvVar", Regex: regexp.MustCompile(`(?i)(env|process\.env|os\.environ).*base64`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "Base64 from environment variable (obfuscation pattern)"},
 		{Name: "DangerousB64EvalChain", Regex: regexp.MustCompile(`(?i)(eval|exec|Function)\s*\(\s*(base64|atob|b64decode)`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "eval(base64decode()) chain — classic obfuscated execution"},
-
-		// === RAG detection patterns (OWASP LLM08) ===
+		{Name: "DangerousB64PipeShell", Regex: regexp.MustCompile(`(?i)base64\s+-d\s*.*\|\s*(?:bash|sh|zsh)`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "base64 decode piped to shell"},
+		{Name: "DangerousCurlPipeBash", Regex: regexp.MustCompile(`(?i)curl\s+.*\|\s*(?:bash|sh|zsh)`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "curl piped to shell (remote execution)"},
+		{Name: "DangerousWgetPipeBash", Regex: regexp.MustCompile(`(?i)wget\s+.*\|\s*(?:bash|sh|zsh)`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "wget piped to shell (remote execution)"},
+		{Name: "DangerousNetcatReverseShell", Regex: regexp.MustCompile(`(?i)\bnc\b.*-e\s+/(?:bin/)?(?:sh|bash)`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "Netcat reverse shell"},
+		{Name: "DangerousNetcatBindShell", Regex: regexp.MustCompile(`(?i)\bnc\b.*-l.*-p\s+\d+`), Severity: SeverityHigh, Category: CatDangerousFunction, Description: "Netcat bind shell listener"},
+		{Name: "DangerousRmRf", Regex: regexp.MustCompile(`rm\s+-rf\s+/(?:\s|$|[*?])`), Severity: SeverityCritical, Category: CatDangerousFunction, Description: "rm -rf on root filesystem"},
 		// Provenance: github.com/aegisgatesecurity/aegisgate-scanner/pkg/detectors/rag_patterns.go
 		{Name: "RAGPoisonRetrievalManipulation", Regex: regexp.MustCompile(`(?i)(?:when\s+(?:this\s+)?(?:document|page|content|text|chunk)\s+is\s+(?:retrieved|searched|found|returned))\s*,?\s*(?:then\s+)?(?:respond|answer|reply|tell|say|output|return)\s+(?:that|with)\s+`), Severity: SeverityHigh, Category: CatPrompt, Description: "RAG poisoning: conditional instruction triggered by retrieval"},
 		{Name: "RAGPoisonEmbeddingTrigger", Regex: regexp.MustCompile(`(?i)(?:embed(?:ded)?\s+(?:this|the\s+following)\s+(?:text|content|phrase|sentence)\s+(?:into|in)\s+(?:the\s+)?(?:vector|embedding)\s+store)|(?:make\s+(?:this|the)\s+(?:document|chunk)\s+(?:rank|score|match)\s+(?:highest|first|top))`), Severity: SeverityHigh, Category: CatPrompt, Description: "RAG poisoning: instruction to manipulate embedding/vector store ranking"},
@@ -291,7 +363,37 @@ func defaultScannerPatterns() []*Pattern {
 		{Name: "PromptLeakSystemTag", Regex: regexp.MustCompile(`(?i)<system>.*(?:you\s+are|act\s+as|your\s+(?:role|task|instructions?))`), Severity: SeverityCritical, Category: CatPrompt, Description: "Response-side: <system> tag content leaked in response"},
 		{Name: "PromptLeakMetaInstruction", Regex: regexp.MustCompile(`(?i)(?:above\s+(?:instructions?|guidelines?|rules?|system\s+prompt)|those\s+instructions?|the\s+instructions?\s+(?:I\s+)?(?:was\s+)?given)\s+(?:tell|told|instruct|require|prohibit|prevent)\s+me\s+to`), Severity: SeverityHigh, Category: CatPrompt, Description: "Response-side: model referencing its meta-instructions"},
 		{Name: "PromptLeakInternalTools", Regex: regexp.MustCompile(`(?i)(?:I\s+have\s+access\s+to\s+(?:the\s+)?(?:following\s+)?(?:tools?|functions?|APIs?|capabilities)\s*[:.]|my\s+available\s+(?:tools?|functions?|APIs?)\s+(?:include|are)\s*[:.])`), Severity: SeverityHigh, Category: CatPrompt, Description: "Response-side: model disclosing its tool/function list"},
+
+		// === MCP tool poisoning patterns ===
+		// These detect malicious instructions embedded in tool descriptions, names,
+		// or arguments — a key defense for MCP framework security.
+		{Name: "ToolPoisonInstallInstruction", Regex: regexp.MustCompile(`(?i)(?:please\s+)?(?:npm\s+install|pip\s+install|apt\s+install|brew\s+install)\s+\S+`), Severity: SeverityCritical, Category: CatPrompt, Description: "Tool poisoning: install instruction in tool metadata"},
+		{Name: "ToolPoisonAgentInstruction", Regex: regexp.MustCompile(`(?i)(?:agent|assistant|you)\s*,?\s+(?:please\s+)?(?:install|download|execute|run)\s+\S+`), Severity: SeverityCritical, Category: CatPrompt, Description: "Tool poisoning: agent-directed install/execute in tool metadata"},
+		{Name: "ToolPoisonExfilUrl", Regex: regexp.MustCompile(`(?i)(?:send|exfiltrate|upload|post)\s+(?:to|via)\s+https?://`), Severity: SeverityCritical, Category: CatPrompt, Description: "Tool poisoning: exfiltration URL in tool arguments"},
+		{Name: "ToolPoisonConfigOverride", Regex: regexp.MustCompile(`(?i)(?:MCP_SERVER|API_KEY|TOKEN|SECRET|PASSWORD|AWS_SECRET|AWS_KEY)[\w]*\s*[=:]\s*\S+`), Severity: SeverityHigh, Category: CatCredential, Description: "Tool poisoning: config/env override in tool arguments"},
+		{Name: "ToolPoisonKeylogger", Regex: regexp.MustCompile(`(?i)keylog|keyboard\s+capture|keystroke\s+log`), Severity: SeverityCritical, Category: CatPrompt, Description: "Tool poisoning: keylogger reference"},
+		{Name: "ToolPoisonReverseShell", Regex: regexp.MustCompile(`(?i)(?:nc|netcat|ncat)\s+.*-e\s+/bin/sh|reverse\s+shell|bind\s+shell`), Severity: SeverityCritical, Category: CatPrompt, Description: "Tool poisoning: reverse shell command"},
+		{Name: "ToolPoisonC2Beacon", Regex: regexp.MustCompile(`(?i)c2\.|command.and.control|beacon\.|callback\s+(?:to|url)`), Severity: SeverityCritical, Category: CatPrompt, Description: "Tool poisoning: C2 beacon pattern"},
+		{Name: "ToolPoisonRansomware", Regex: regexp.MustCompile(`(?i)(?:encrypt|lock)\s+(?:all\s+)?(?:files?|directory|directories|disk)|ransomware`), Severity: SeverityCritical, Category: CatPrompt, Description: "Tool poisoning: ransomware pattern"},
+		{Name: "ToolPoisonDataExfil", Regex: regexp.MustCompile(`(?i)(?:exfiltrate|steal|copy\s+out|dump)\s+(?:the\s+)?(?:database|credentials?|secrets?|users?|patient|customer)`), Severity: SeverityCritical, Category: CatPrompt, Description: "Tool poisoning: data exfiltration instruction"},
+		{Name: "ToolPoisonSuspiciousPkgName", Regex: regexp.MustCompile(`(?i)(?:exfiltrat|keylog|backdoor|trojan|malware|stealer|spyware|rat\b|payload|injector|harvester)-?\w*@\w+`), Severity: SeverityCritical, Category: CatPrompt, Description: "Tool poisoning: suspicious package name in install"},
+		{Name: "ToolPoisonCredentialForge", Regex: regexp.MustCompile(`(?i)(?:forge|fake|spoof|fabricate)\s+(?:credentials?|tokens?|certificates?|API\s+keys?)`), Severity: SeverityHigh, Category: CatPrompt, Description: "Tool poisoning: credential forgery"},
+		{Name: "ToolPoisonPathTraversal", Regex: regexp.MustCompile(`\.\./|\.\.\\|\.\.%2f|\.\.%5c`), Severity: SeverityHigh, Category: CatPrompt, Description: "Tool poisoning: path traversal in tool arguments"},
+		{Name: "ToolPoisonShellInjection", Regex: regexp.MustCompile(`(?i)(?:;\s*(?:rm|cat|wget|curl|bash|sh|nc|python)\s|&&\s*(?:rm|cat|wget|curl|bash|sh|nc|python)\s|\|\s*(?:rm|cat|wget|curl|bash|sh|nc|python)\s)`), Severity: SeverityCritical, Category: CatPrompt, Description: "Tool poisoning: shell command injection in arguments"},
+		{Name: "ToolPoisonB64Payload", Regex: regexp.MustCompile(`(?i)base64\s*(?:decode|exec|eval|run|execute)\s*[:(]`), Severity: SeverityCritical, Category: CatPrompt, Description: "Tool poisoning: base64-encoded payload execution"},
+		{Name: "ToolPoisonSSTI", Regex: regexp.MustCompile(`(?i)\{\{.*(?:__class__|__subclasses__|__init__|__globals__|__builtins__)`), Severity: SeverityCritical, Category: CatPrompt, Description: "Tool poisoning: server-side template injection"},
+		{Name: "ToolPoisonSSRF", Regex: regexp.MustCompile(`(?i)(?:fetch|request|get|post|load)\s+(?:from\s+)?https?://(?:169\.254\.|10\.|172\.(?:1[6-9]|2[0-9]|3[01])\.|192\.168\.)`), Severity: SeverityCritical, Category: CatPrompt, Description: "Tool poisoning: SSRF targeting internal networks"},
+		{Name: "ToolPoisonXSSInArg", Regex: regexp.MustCompile(`(?i)<script|javascript:|on(?:error|load|click|mouseover)\s*=`), Severity: SeverityHigh, Category: CatPrompt, Description: "Tool poisoning: XSS payload in tool arguments"},
+		{Name: "ToolPoisonSQLiInArg", Regex: regexp.MustCompile(`(?i)(?:'|"|;\s*).*(?:drop\s+table|union\s+select|or\s+1=1|;\s*--|/\*.*\*/)`), Severity: SeverityCritical, Category: CatPrompt, Description: "Tool poisoning: SQL injection in tool arguments"},
+		{Name: "ToolPoisonIgnoreSafety", Regex: regexp.MustCompile(`(?i)(?:disregard|ignore|override|bypass)\s+(?:all\s+)?(?:safety|security|content\s+filter|guardrail|restriction)`), Severity: SeverityCritical, Category: CatPrompt, Description: "Tool poisoning: safety override in tool arguments"},
+		{Name: "ToolPoisonMultiTurn", Regex: regexp.MustCompile(`(?i)(?:in\s+(?:the\s+)?next\s+(?:turn|message|response)|when\s+(?:asked|prompted)\s+(?:again|later)|if\s+(?:asked|prompted)\s+again)`), Severity: SeverityHigh, Category: CatPrompt, Description: "Tool poisoning: multi-turn manipulation instruction"},
+		{Name: "ToolPoisonModifyBehavior", Regex: regexp.MustCompile(`(?i)(?:modify|change|update|override|replace)\w*\s*(?:tool|behavior|behaviour|function|action)`), Severity: SeverityHigh, Category: CatPrompt, Description: "Tool poisoning: tool behavior modification"},
+		{Name: "ToolPoisonAlsoSend", Regex: regexp.MustCompile(`(?i)also\s+(?:send|upload|post|forward|transmit)\s+(?:file|data|contents?|results?)\s+(?:to|via)`), Severity: SeverityCritical, Category: CatPrompt, Description: "Tool poisoning: exfiltration via 'also send' pattern"},
+		{Name: "ToolPoisonNewBehavior", Regex: regexp.MustCompile(`(?i)new_behavior\s*"\s*:\s*"`), Severity: SeverityHigh, Category: CatPrompt, Description: "Tool poisoning: new_behavior field in tool modification"},
+		{Name: "ToolPoisonSuspiciousPkg", Regex: regexp.MustCompile(`(?i)(?:npm|pip)\s+install\s+(?:keylog|stealth|backdoor|trojan|malware|reverse.?shell|payload)`), Severity: SeverityCritical, Category: CatPrompt, Description: "Tool poisoning: suspicious package installation"},
+		{Name: "ToolPoisonExfilDomain", Regex: regexp.MustCompile(`(?i)(?:send|exfiltrate|upload|post|forward)\w*\s+(?:to|via)\s+https?://`), Severity: SeverityCritical, Category: CatPrompt, Description: "Tool poisoning: exfiltration to external domain"},
 	}
+
 }
 
 // SanitizeForLog truncates and cleans a string for safe logging.

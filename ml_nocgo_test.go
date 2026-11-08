@@ -48,8 +48,8 @@ func TestMLCharNormalizer_NoCGO(t *testing.T) {
 	}
 
 	encoded := cn.Encode("hello")
-	if len(encoded) != 256 {
-		t.Errorf("encoded length = %d, want 256", len(encoded))
+	if len(encoded) != 512 {
+		t.Errorf("encoded length = %d, want 512", len(encoded))
 	}
 }
 

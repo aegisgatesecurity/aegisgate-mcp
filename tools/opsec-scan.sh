@@ -41,6 +41,23 @@ else
     LABEL="tracked"
 fi
 
+
+# Whitelist: test fixtures containing intentional fake credentials
+WHITELIST="corpus_10k_test.go"
+FILTERED=""
+for f in $FILES; do
+    skip=false
+    for w in $WHITELIST; do
+        if [ "$f" = "$w" ]; then
+            skip=true
+            break
+        fi
+    done
+    if [ "$skip" = "false" ]; then
+        FILTERED="$FILTERED $f"
+    fi
+done
+FILES="$FILTERED"
 if [ -z "$FILES" ]; then
     echo "No $LABEL files to scan. Exiting."
     exit 0
