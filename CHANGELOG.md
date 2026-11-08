@@ -1,4 +1,23 @@
 # Changelog
+## [1.7.0] - 2026-11-07 — Model v22b, NFKC Normalization, ATLAS L2 Patterns, MaxSeqLen 512
+
+> **v1.7.0** synchronizes MCP with Platform v5.1.0: ML model v22b, NFKC Unicode normalization with regional indicator mapping, 6 new ATLAS L2 compliance patterns, and MaxSeqLen 256→512.
+
+### ML Model v22b
+- ExpectedModelHash updated to v22b (948b6500...)
+- Model file committed to models/ directory
+
+### NFKC + Regional Indicator Mapping
+- `MapRegionalIndicators()` added to normalizer
+
+### 6 New ATLAS L2 Patterns
+- ATLAS_T1552_005_SecretDisclosure, ATLAS_T1589_006_ModelArchExtraction
+- ATLAS_T1548_004_InsiderThreat, ATLAS_T1648_002_MaliciousCode
+- ATLAS_T1498_004_ResourceExhaustion, ATLAS_T1535_003_Roleplay
+
+### MaxSeqLen
+- Default MaxSequenceLength 256→512 in types.go
+
 
 All notable changes to AegisGate MCP are documented in this file.
 
