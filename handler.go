@@ -470,7 +470,7 @@ func (h *RequestHandler) handleCallTool(ctx context.Context, conn *Connection, r
 			if strVal, ok := paramValue.(string); ok && strVal != "" {
 				mlResult := h.ThreatDetector.Detect(strVal)
 				if mlResult.IsThreat {
-					const l3HighConfidence = 0.95
+					const l3HighConfidence = 0.98
 					if mlResult.Score >= l3HighConfidence {
 						if h.AuditLogger != nil {
 							h.AuditLogger.Log(ctx, &AuditEntry{
