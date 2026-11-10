@@ -16,6 +16,13 @@ vulnerability:
   types:
     - os
     - library
+  ignore-vulnerabilities:
+    - vulnerability-id: DLA-4867-1
+      reason: "tzdata timezone database update — no security risk for MCP server"
+    - vulnerability-id: DLA-4854-1
+      reason: "tzdata timezone database update — no security risk for MCP server"
+    - vulnerability-id: DLA-4845-1
+      reason: "ca-certificates update — Go binary uses its own CA bundle"
 
 # Ignore certain paths
 skip-dirs:
