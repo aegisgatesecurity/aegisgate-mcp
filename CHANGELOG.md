@@ -1,4 +1,24 @@
 # Changelog
+## [1.8.0] - 2026-11-10 — Threshold Raise, Pattern Expansion, Trivy Ignores
+
+> **v1.8.0** raises the L3 high-confidence threshold from 0.95 to 0.98 for reduced false positives, expands detection from 79 to 132 regex patterns, and adds Trivy vulnerability ignore rules for Debian LTS updates.
+
+### ML Threshold Change (#71)
+- L3 high-confidence threshold raised from 0.95 to 0.98
+- Reduces false positives on edge-case prompts while maintaining detection accuracy
+
+### Pattern Expansion (79 → 132)
+- Prompt: 25 → 50 (+25 new prompt injection patterns)
+- Dangerous Functions: 34 → 44 (+10 new dangerous function patterns)
+- Credentials: 6 → 13 (+7 new credential patterns: Stripe, DB connections, etc.)
+- Compliance: 3 → 9 (+6 new compliance patterns: OWASP LLM, EU AI Act, ATLAS)
+- PII: 2 → 6 (+4 new PII patterns: phone, passport, driver's license)
+- Financial: 3 → 4 (+1: Discover card)
+
+### Security
+- Added Trivy vulnerability ignore rules for Debian LTS updates (DLA-4867-1, DLA-4854-1, DLA-4845-1) (#73)
+- 0 open code scanning alerts
+
 ## [1.7.0] - 2026-11-07 — Model v22b, NFKC Normalization, ATLAS L2 Patterns, MaxSeqLen 512
 
 > **v1.7.0** synchronizes MCP with Platform v5.1.0: ML model v22b, NFKC Unicode normalization with regional indicator mapping, 6 new ATLAS L2 compliance patterns, and MaxSeqLen 256→512.
