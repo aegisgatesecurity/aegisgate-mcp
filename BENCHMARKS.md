@@ -1,3 +1,5 @@
+> **⚠ WITHDRAWN 2026-11-23 — ML detection is disabled.** The CharCNN-BiLSTM described here was trained on a corpus whose attack-side labels failed audit; all performance claims in this document are void. See docs/ML-WITHDRAWN.md.
+
 # AegisGate MCP — Performance Benchmarks
 
 **Date:** October 10, 2026

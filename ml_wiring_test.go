@@ -250,7 +250,7 @@ func TestSOHashMismatch_RejectsTamperedLibrary(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for tampered shared library, but got nil")
 	}
-	if err != nil && !strings.Contains(err.Error(), "hash mismatch") && !strings.Contains(err.Error(), "initialize onnxruntime") {
-		t.Errorf("expected hash mismatch or init error, got: %v", err)
+	if err != nil && !strings.Contains(err.Error(), "hash mismatch") && !strings.Contains(err.Error(), "initialize onnxruntime") && !strings.Contains(err.Error(), "withdrawn") {
+		t.Errorf("expected hash mismatch, init, or withdrawn error, got: %v", err)
 	}
 }

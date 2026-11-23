@@ -6,7 +6,7 @@
 # vendored CharCNN-BiLSTM v13 neural threat detector. All dependencies are
 # self-contained:
 #   - libonnxruntime.so (Microsoft, MIT, vendored in ./lib/)
-#   - threat_cnn_bilstm.onnx (AegisGate, Apache-2.0, vendored in ./models/)
+#   - threat_cnn_bilstm.onnx — WITHDRAWN 2026-11-23, no longer shipped
 #   - onnxruntime_go (vendored in ./internal/onnxruntime_go/)
 #   - golang.org/x/text (vendored in ./internal/textnorm/)
 #
@@ -50,7 +50,7 @@ COPY . .
 # Default: CGO_ENABLED=1 (full neural threat detection).
 # Override: --build-arg CGO_ENABLED=0 for heuristic-only (smaller image).
 ARG CGO_ENABLED=1
-ARG VERSION=1.6.1
+ARG VERSION=1.8.1
 ARG TARGETARCH
 
 # Set up environment for CGO build with vendored onnxruntime.
@@ -104,8 +104,9 @@ COPY --from=builder /mcp-server /app/mcp-server
 # Copy vendored ONNX runtime shared library (arch-specific)
 COPY --from=builder /build/lib/${TARGETARCH}/libonnxruntime.so /app/lib/libonnxruntime.so
 
-# Copy vendored ML model (CharCNN-BiLSTM v13, 6.2MB)
-COPY --from=builder /build/models/threat_cnn_bilstm.onnx /app/models/threat_cnn_bilstm.onnx
+# Neural ML detection WITHDRAWN 2026-11-23 (see docs/ML-WITHDRAWN.md).
+# No model is shipped. The runtime runs deterministic detection only;
+# MCP_ML_ENABLED is forced false regardless of env.
 
 # Set up shared library discovery.
 # The onnxruntime_go library uses dlopen() to load libonnxruntime.so at
@@ -114,10 +115,9 @@ COPY --from=builder /build/models/threat_cnn_bilstm.onnx /app/models/threat_cnn_
 ENV ONNXRUNTIME_SHARED_LIBRARY_PATH=/app/lib/libonnxruntime.so
 ENV LD_LIBRARY_PATH=/app/lib
 
-# ML configuration: enabled by default in Docker (full 23-layer security).
-ENV MCP_ML_ENABLED=true
+# ML configuration: WITHDRAWN 2026-11-23 — deterministic detection only.
+ENV MCP_ML_ENABLED=false
 ENV MCP_ML_THRESHOLD=0.50
-ENV MCP_ML_MODEL=/app/models/threat_cnn_bilstm.onnx
 
 # Server configuration
 ENV MCP_SERVER_ADDR=:8081
