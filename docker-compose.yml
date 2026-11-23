@@ -22,9 +22,10 @@ services:
       - MCP_DEMO_TOOLS=true
       - MCP_TEST_AGENT=true
       - MCP_HEALTH_ADDR=:8082
-      - MCP_ML_ENABLED=true
+      # ML withdrawn 2026-11-23 (see docs/ML-WITHDRAWN.md): neural ML is
+      # hard-disabled; these vars are inert. Deterministic detection only.
+      - MCP_ML_ENABLED=false
       - MCP_ML_THRESHOLD=0.50
-      - MCP_ML_MODEL=/app/models/threat_cnn_bilstm.onnx
       - ONNXRUNTIME_SHARED_LIBRARY_PATH=/app/lib/libonnxruntime.so
       - LD_LIBRARY_PATH=/app/lib
     ports:

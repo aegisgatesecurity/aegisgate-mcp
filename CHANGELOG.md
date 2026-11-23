@@ -1,4 +1,8 @@
 # Changelog
+## [1.8.1] - 2026-11-23 — ML Withdrawn
+
+- `models/threat_cnn_bilstm.onnx` removed; ML detector hard-disabled; all detection-rate claims void. Deterministic tool screening unaffected. See docs/ML-WITHDRAWN.md.
+
 ## [1.8.0] - 2026-11-10 — Threshold Raise, Pattern Expansion, Trivy Ignores
 
 > **v1.8.0** raises the L3 high-confidence threshold from 0.95 to 0.98 for reduced false positives, expands detection from 79 to 132 regex patterns, and adds Trivy vulnerability ignore rules for Debian LTS updates.

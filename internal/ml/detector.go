@@ -81,6 +81,16 @@ func NewThreatDetector(cfg DetectorConfig) *ThreatDetector {
 		cfg.Timeout = 10
 	}
 
+	// WITHDRAWN 2026-11-23: all neural ML detection is hard-disabled.
+	// The CharCNN-BiLSTM lineage was trained on a corpus whose attack-side
+	// labels failed audit (~71% flip rate). Detection-rate claims are void.
+	// See docs/ML-WITHDRAWN.md. Do not re-enable without retraining GO.
+	if cfg.Enabled || cfg.ShadowMode {
+		slog.Warn("ML detection is WITHDRAWN and cannot be enabled (see docs/ML-WITHDRAWN.md)")
+	}
+	cfg.Enabled = false
+	cfg.ShadowMode = false
+
 	td := &ThreatDetector{
 		config:     cfg,
 		normalizer: NewCharNormalizer(),
@@ -268,6 +278,13 @@ func (td *ThreatDetector) heuristicScore(encoded []int32) float64 {
 func (td *ThreatDetector) LoadModel(path string) error {
 	td.mu.Lock()
 	defer td.mu.Unlock()
+
+	// WITHDRAWN 2026-11-23: refuse to load any model. The branch below is
+	// intentionally kept (not deleted) so the retraining effort can restore it.
+	withdrawnErr := fmt.Errorf("ML model loading is withdrawn pending retraining (see docs/ML-WITHDRAWN.md)")
+	if withdrawnErr != nil {
+		return withdrawnErr
+	}
 
 	cleanPath := filepath.Clean(path) // #nosec G304
 	if _, err := os.Stat(cleanPath); err != nil {
