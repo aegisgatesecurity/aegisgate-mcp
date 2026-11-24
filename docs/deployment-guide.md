@@ -1,3 +1,5 @@
+> **⚠ 2026-11-23 — ML WITHDRAWN.** Neural (CharCNN-BiLSTM) ML detection described in this document is withdrawn; see [ML-WITHDRAWN.md](ML-WITHDRAWN.md). Deterministic regex/heuristic detection is unaffected.
+
 # AegisGate MCP Deployment Guide
 
 **Product:** AegisGate MCP — Security-First MCP Server  
@@ -6,7 +8,7 @@
 **Version:** 1.4.2  
 **Runtime:** Go 1.26+  
 **External Dependencies:** Zero  
-**Docker Base Image:** `debian:bookworm-slim` (~135 MB ML-enabled, ~8 MB heuristic-only)
+**Docker Base Image:** `debian:bookworm-slim` (~135 MB ML — withdrawn; ~8 MB heuristic-only recommended)
 
 ---
 
@@ -58,10 +60,10 @@ AegisGate MCP can be imported as a Go package and embedded directly in another a
 git clone https://github.com/aegisgate/mcp-security.git
 cd mcp-security
 
-# Build the binary (non-CGO: heuristic-only, no ONNX)
+# Build the binary (non-CGO: regex/heuristic detection, no ONNX) — recommended
 CGO_ENABLED=0 go build -o mcp-server ./cmd/mcp-server
 
-# Or build with full ML support (CGO: requires libonnxruntime.so)
+# Or build with CGO (neural detection withdrawn 2026-11-23; requires libonnxruntime.so)
 CGO_ENABLED=1 CGO_LDFLAGS="-L$(pwd)/lib -lonnxruntime" go build -o mcp-server ./cmd/mcp-server
 
 # Verify the binary
@@ -69,7 +71,7 @@ CGO_ENABLED=1 CGO_LDFLAGS="-L$(pwd)/lib -lonnxruntime" go build -o mcp-server ./
 ```
 
 The non-CGO binary is fully static and has zero external runtime dependencies.
-The CGO binary requires `libonnxruntime.so` at runtime (vendored in `lib/`).
+The CGO binary requires `libonnxruntime.so` at runtime (vendored in `lib/`). Neural detection is withdrawn; only deterministic layers run.
 Both can be copied to any Linux/amd64 machine.
 
 ### Install the Binary
@@ -157,8 +159,7 @@ curl http://127.0.0.1:8082/healthz
 ## 3. Docker Deployment
 
 AegisGate MCP uses `debian:bookworm-slim` as the base image with CGO enabled
-for full neural threat detection. The final image is approximately 135 MB and
-includes the vendored ONNX Runtime and CharCNN-BiLSTM v15 model. A lighter
+Neural detection is withdrawn (2026-11-23). The ML image is approximately 135 MB. A lighter
 heuristic-only image (~8 MB) can be built with `--build-arg CGO_ENABLED=0`.
 
 The image runs as a non-root user (`mcpuser`) with shell disabled.
@@ -166,7 +167,7 @@ The image runs as a non-root user (`mcpuser`) with shell disabled.
 ### Build the Image
 
 ```bash
-# Full ML-enabled build (default, ~135 MB)
+# ML image build (withdrawn 2026-11-23; ~135 MB)
 docker build -t aegisgate-mcp .
 
 # Heuristic-only build (no CGO, ~8 MB)
@@ -724,10 +725,10 @@ Air-gapped deployment is a common requirement in environments where the server o
 git clone https://github.com/aegisgate/mcp-security.git
 cd mcp-security
 
-# Option A: Non-CGO static binary (heuristic-only, no ONNX)
+# Option A: Non-CGO static binary (heuristic-only, no ONNX) — recommended
 CGO_ENABLED=0 go build -ldflags="-s -w" -o mcp-server ./cmd/mcp-server
 
-# Option B: CGO binary with full ML (requires libonnxruntime.so at runtime)
+# Option B: CGO binary (ML withdrawn 2026-11-23; requires libonnxruntime.so at runtime)
 CGO_ENABLED=1 CGO_LDFLAGS="-L$(pwd)/lib -lonnxruntime" \
   go build -ldflags="-s -w" -o mcp-server ./cmd/mcp-server
 
@@ -743,9 +744,8 @@ mkdir -p aegisgate-bundle/{bin,lib,models,certs,config}
 # Copy binary
 cp mcp-server aegisgate-bundle/bin/
 
-# For CGO builds: copy shared library and model
+# For CGO builds: copy shared library (ML model no longer shipped — ML withdrawn 2026-11-23)
 cp lib/libonnxruntime.so aegisgate-bundle/lib/
-cp models/threat_cnn_bilstm.onnx aegisgate-bundle/models/
 
 # Copy certificates
 cp certs/ca.pem certs/server.pem certs/server.key aegisgate-bundle/certs/

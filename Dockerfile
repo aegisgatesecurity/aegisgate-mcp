@@ -2,12 +2,13 @@
 # AegisGate MCP — Standalone Docker Image (Distroless / CVE-free)
 # Zero external dependencies. Air-gapped capable. Multi-stage build.
 #
-# This Dockerfile builds the FULL ML-enabled image (CGO_ENABLED=1) with the
-# vendored CharCNN-BiLSTM v13 neural threat detector. All dependencies are
-# self-contained:
-#   - libonnxruntime.so (Microsoft, MIT, vendored in ./lib/)
+# This Dockerfile builds the CGO image (CGO_ENABLED=1). Neural ML detection was
+# WITHDRAWN 2026-11-23 (see docs/ML-WITHDRAWN.md): the vendored CharCNN-BiLSTM
+# model is no longer shipped and neural detection is hard-disabled. The image
+# runs deterministic detection only. All dependencies are self-contained:
+#   - libonnxruntime.so (Microsoft, MIT, vendored in ./lib/) — unused; retained for reproducibility
 #   - threat_cnn_bilstm.onnx — WITHDRAWN 2026-11-23, no longer shipped
-#   - onnxruntime_go (vendored in ./internal/onnxruntime_go/)
+#   - onnxruntime_go (vendored in ./internal/onnxruntime_go/) — unused; retained for reproducibility
 #   - golang.org/x/text (vendored in ./internal/textnorm/)
 #
 # Build:  docker build -t aegisgate-mcp:latest .
@@ -17,11 +18,12 @@
 #   docker build --build-arg CGO_ENABLED=0 --target lite -t aegisgate-mcp:lite .
 #
 # Runtime bases:
-#   ML-enabled (default):  debian:bookworm-slim with libgnutls30 purged
+#   ML image (default; CGO build, ML WITHDRAWN 2026-11-23): debian:bookworm-slim with libgnutls30 purged
 #     - Same glibc/libstdc++ that ONNX Runtime was compiled against
 #     - libgnutls30 purged to eliminate all CVE alerts
 #     - Shell and wget removed for hardened attack surface
 #     - Non-root user, minimal package set
+#     - Neural detection disabled; deterministic detection only
 #
 #   Heuristic-only (lite):  gcr.io/distroless/static-debian12:nonroot
 #     - TRUE distroless — no shell, no package manager, no OS libraries
@@ -47,8 +49,8 @@ COPY go.mod ./
 COPY . .
 
 # Build-time argument controls CGO/ONNX support.
-# Default: CGO_ENABLED=1 (full neural threat detection).
-# Override: --build-arg CGO_ENABLED=0 for heuristic-only (smaller image).
+# Default: CGO_ENABLED=1 (CGO build; neural detection WITHDRAWN 2026-11-23 — deterministic detection only).
+# Override: --build-arg CGO_ENABLED=0 for static heuristic-only (smaller image).
 ARG CGO_ENABLED=1
 ARG VERSION=1.8.1
 ARG TARGETARCH
@@ -72,11 +74,12 @@ RUN go build \
     -o /mcp-server \
     ./cmd/mcp-server
 
-# --- Runtime stage: ML-enabled (debian:bookworm-slim, gnutls purged) ---
+# --- Runtime stage: ML-image (debian:bookworm-slim, gnutls purged; ML WITHDRAWN 2026-11-23) ---
 # We use debian:bookworm-slim (not distroless/scratch) because ONNX Runtime's
 # libonnxruntime.so requires the exact glibc/libstdc++ from Debian 12.
 # However, we PURGE libgnutls30 (the source of all 6 CVE alerts) and remove
 # the shell and wget for a hardened, minimal attack surface.
+# Neural detection is withdrawn; deterministic detection only.
 FROM debian:bookworm-slim AS ml
 
 ARG TARGETARCH

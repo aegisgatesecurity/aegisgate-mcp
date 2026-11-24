@@ -1,10 +1,12 @@
+> **⚠ 2026-11-23 — ML WITHDRAWN.** Neural (CharCNN-BiLSTM) ML detection described in this document is withdrawn; see [ML-WITHDRAWN.md](ML-WITHDRAWN.md). Deterministic regex/heuristic detection is unaffected.
+
 # Getting Started with AegisGate MCP
 
 > **AegisGate MCP** is a product of AegisGate Security, LLC.
 >
 > **License:** Apache-2.0 &nbsp;|&nbsp; **Version:** 1.4.2 &nbsp;|&nbsp; **Go:** 1.26+ &nbsp;|&nbsp; **Dependencies:** Zero external runtime dependencies
 
-AegisGate MCP is a security-first Model Context Protocol (MCP) server designed for secure AI agent tool use across any environment. It provides tool execution, role-based access control (RBAC), policy enforcement, audit logging, and neural threat detection out of the box — all in a single Go binary with zero external module dependencies.
+AegisGate MCP is a security-first Model Context Protocol (MCP) server designed for secure AI agent tool use across any environment. It provides tool execution, role-based access control (RBAC), policy enforcement, audit logging, and deterministic threat detection out of the box — all in a single Go binary with zero external module dependencies.
 
 This guide walks you through installing, running, and testing the server from scratch.
 
@@ -42,20 +44,19 @@ go build -o mcp-server ./cmd/mcp-server
 
 After the build completes you will have an `mcp-server` executable in the current directory.
 
-> **Note:** The project has zero external module dependencies — all third-party code (ONNX Runtime, Unicode normalization) is vendored into `internal/`, `lib/`, and `models/`. No `go mod download` step is needed.
+> **Note:** The project has zero external module dependencies — all third-party code (Unicode normalization and related helpers) is vendored into `internal/` and `lib/`. ONNX Runtime bindings are retained but unused (ML withdrawn 2026-11-23). No `go mod download` step is needed.
 
 ### Docker
 
 A `Dockerfile` is included for containerized deployments. The default build
-includes the vendored ONNX Runtime and CharCNN-BiLSTM v15 model for full
-neural threat detection:
+includes the vendored ONNX Runtime bindings (neural detection withdrawn 2026-11-23):
 
 ```bash
-# Full ML-enabled build (~135 MB)
+# ML build (neural detection withdrawn 2026-11-23; ~135 MB)
 docker build -t aegisgate-mcp .
 docker run -p 8081:8081 aegisgate-mcp --demo
 
-# Heuristic-only build (~8 MB, no ONNX)
+# Heuristic/regex-only build (~8 MB, no ONNX) — recommended
 docker build --build-arg CGO_ENABLED=0 -t aegisgate-mcp:lite .
 ```
 

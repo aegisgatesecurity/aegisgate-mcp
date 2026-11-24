@@ -7,18 +7,18 @@
 
 *A hardened, zero-dependency MCP server written in pure Go. Build your MCP server on a foundation that has security built in from line one — not bolted on after a breach.*
 
-Apache 2.0 · 23 security layers · 132 regex patterns + CharCNN-BiLSTM (v15) ML detection · Zero CVEs · Zero external module dependencies
+Apache 2.0 · 23 security layers · 132 regex patterns · Zero CVEs · Zero external module dependencies
 
 [![GitHub stars](https://img.shields.io/github/stars/aegisgatesecurity/aegisgate-mcp?style=flat&logo=github&label=Star&color=FFD700&labelColor=181717&logoColor=FFD700)](https://github.com/aegisgatesecurity/aegisgate-mcp)
-**Found AegisGate MCP useful? [Star the repo](https://github.com/aegisgatesecurity/aegisgate-mcp) ⭐ and [tell a colleague](https://x.com/intent/tweet?text=Securing%20my%20MCP%20servers%20with%20AegisGate%20%E2%80%94%2023%20security%20layers%2C%20zero%20dependencies%2C%20ML%20threat%20detection%3A%20https%3A%2F%2Fgithub.com%2Faegisgatesecurity%2Faegisgate-mcp) — it helps other devs discover secure MCP tooling.**
+**Found AegisGate MCP useful? [Star the repo](https://github.com/aegisgatesecurity/aegisgate-mcp) ⭐ and [tell a colleague](https://x.com/intent/tweet?text=Securing%20my%20MCP%20servers%20with%20AegisGate%20%E2%80%94%2023%20security%20layers%2C%20zero%20dependencies%2C%20deterministic%20detection%3A%20https%3A%2F%2Fgithub.com%2Faegisgatesecurity%2Faegisgate-mcp) — it helps other devs discover secure MCP tooling.**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Go](https://img.shields.io/badge/Go-1.27.3-00ADD8?logo=go)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.27.4-00ADD8?logo=go)](https://golang.org/)
 [![Version](https://img.shields.io/badge/Version-1.8.1-blue.svg)](#changelog)
 [![Coverage](https://img.shields.io/badge/Coverage-92.0%25-brightgreen.svg)](#test-coverage)
 [![Dependencies](https://img.shields.io/badge/Dependencies-Zero-success.svg)](#overview)
 [![Docker](https://img.shields.io/badge/Docker-Distroless_0_CVEs-blue.svg)](#docker)
-[![ML](https://img.shields.io/badge/ML-CharCNN--BiLSTM_v15-purple.svg)](#ml-threat-detection-l3)
+[![ML](https://img.shields.io/badge/ML-WITHDRAWN%20(2026--11--23)-lightgrey.svg)](docs/ML-WITHDRAWN.md)
 [![Arch](https://img.shields.io/badge/Arch-amd64%20%7C%20arm64-orange.svg)](#build)
 [![CI](https://github.com/aegisgatesecurity/aegisgate-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/aegisgatesecurity/aegisgate-mcp/actions/workflows/ci.yml)
 [![Security](https://github.com/aegisgatesecurity/aegisgate-mcp/actions/workflows/security.yml/badge.svg)](https://github.com/aegisgatesecurity/aegisgate-mcp/actions/workflows/security.yml)
@@ -33,6 +33,8 @@ Apache 2.0 · 23 security layers · 132 regex patterns + CharCNN-BiLSTM (v15) ML
 
 
 </div>
+
+> **⚠ 2026-11-23 — ML WITHDRAWN.** The neural threat detector (CharCNN-BiLSTM) and all ML-based detection claims in this document are withdrawn (see [docs/ML-WITHDRAWN.md](docs/ML-WITHDRAWN.md)). Deterministic regex/heuristic detection is unaffected.
 
 > **AegisGate Security™** is a trademark of AegisGate Security, LLC, filed with the USPTO.
 > "AegisGate MCP" is an unregistered product name. See [Trademark](#trademark) below.
@@ -57,7 +59,7 @@ a breach.
 | Authentication | ❌ Bring your own | ✅ Bearer tokens + API keys + lockout |
 | Authorization | ❌ Nothing | ✅ 4-tier RBAC with per-tool permissions |
 | Audit logging | ❌ Nothing | ✅ Tamper-evident SHA-256 hash chain |
-| Threat detection | ❌ Nothing | ✅ 132 regex patterns + neural ML (<1ms) |
+| Threat detection | ❌ Nothing | ✅ 132 regex patterns (<1ms) |
 | Supply chain risk | ❌ npm/PyPI deps | ✅ Zero dependencies (Go stdlib only) |
 | CVEs | 3 critical in 6 months | Zero. Ever. |
 | License | MIT | Apache 2.0 |
@@ -75,7 +77,7 @@ a breach.
 
 AegisGate MCP is a hardened, zero-dependency MCP server written in pure Go.
 It sits between AI agents and the tools they call, applying **23 layers of
-defense** to every request — from authentication and RBAC to neural threat
+defense** to every request — from authentication and RBAC to deterministic threat
 detection and chain analysis.
 
 Standard MCP servers assume a trusted local environment. In production —
@@ -92,9 +94,9 @@ dependencies so it can run air-gapped.
 | **License** | Apache-2.0 |
 | **Go version** | 1.27+ |
 | **Module deps** | Zero (no `require` directives — all third-party code vendored) |
-| **Docker image** | ML: `debian:bookworm-slim` (gnutls purged), ~127 MB, 0 CVEs · Lite: `distroless/static-debian12`, ~10 MB, 0 CVEs |
+| **Docker image** | Lite: `distroless/static-debian12`, ~10 MB, 0 CVEs (ML image target retained for reproducibility; neural detection withdrawn 2026-11-23) |
 | **Architectures** | amd64, arm64 |
-| **ML model** | CharCNN-BiLSTM v15, 1.6M params, <1ms CPU inference |
+| **ML model** | WITHDRAWN 2026-11-23 — see [docs/ML-WITHDRAWN.md](docs/ML-WITHDRAWN.md) |
 | **Tests** | 611 unit/integration + 32 load/stress = 643 total, 14 benchmarks, 3 fuzz targets, 92.0% coverage (non-CGO) / 91.9% (CGO) |
 
 ---
@@ -135,7 +137,7 @@ go build -o mcp-server ./cmd/mcp-server
 ### Docker
 
 ```bash
-# Build and run (ML-enabled, ~127 MB, 0 CVEs)
+# ML image (neural detection WITHDRAWN 2026-11-23; retained for reproducibility)
 docker build --target ml -t aegisgate-mcp .
 docker run -p 8081:8081 aegisgate-mcp --demo
 
@@ -152,35 +154,23 @@ docker run -p 8081:8081 aegisgate-mcp:lite --demo
 
 The ML image uses `debian:bookworm-slim` with `libgnutls30` purged (shared
 libraries and dpkg metadata removed), eliminating all 6 Trivy CVEs while
-keeping the glibc and ONNX Runtime dependencies required for neural
-inference. The lite image is true distroless
+and keeping its historical dependencies. Neural detection is withdrawn
+(2026-11-23); use the lite image. The lite image is true distroless
 (`gcr.io/distroless/static-debian12:nonroot`) — zero OS packages, zero
 CVEs, ~10 MB. Both targets include a built-in `--health-check` flag for
 Docker HEALTHCHECK (no wget/curl needed). Multi-arch builds support
 both `linux/amd64` and `linux/arm64`.
 
-### ML Threat Detection (L3)
+### ML Threat Detection (L3) — WITHDRAWN 2026-11-23
 
-AegisGate MCP includes the same CharCNN-BiLSTM v15 neural model used by
-AegisGate Platform and Rampart — vendored with zero external module
-dependencies. The model provides:
+The CharCNN-BiLSTM neural threat detector (L3) and all ML-based detection
+claims are **withdrawn**. The model's attack-side training corpus failed
+label audit (~71% flip rate); model weights have been removed and neural
+detection is hard-disabled. See [docs/ML-WITHDRAWN.md](docs/ML-WITHDRAWN.md).
 
-- **Semantic attack detection** — catches prompt injection and jailbreak
-  attempts that bypass regex pattern matching
-- **Evasion resistance** — detects obfuscation techniques (leetspeak,
-  Unicode homoglyphs, character transposition, vowel deletion, word reversal)
-- **Two-tier blocking** — scores ≥0.95 block independently; scores 0.50–0.94
-  block only if L1 (regex) or L2 (input scanner) corroboration is present
-- **Shadow mode** — log predictions without blocking (for calibration)
-- **Heuristic fallback** — when CGO is unavailable, heuristic scoring
-  provides baseline detection without ONNX
-
-| Flag | Env Var | Default | Description |
-|------|---------|---------|-------------|
-| `--ml` | `MCP_ML_ENABLED` | `false` (CLI) / `true` (Docker) | Enable neural threat detection |
-| `--ml-shadow` | `MCP_ML_SHADOW` | `false` | Log predictions but never block |
-| `--ml-threshold` | `MCP_ML_THRESHOLD` | `0.50` | Threat score threshold (0.0–1.0) |
-| `--ml-model` | `MCP_ML_MODEL` | `./models/threat_cnn_bilstm.onnx` | Path to ONNX model file |
+The `--ml*` flags and `MCP_ML_*` environment variables are inert. Deterministic
+layers (regex, evasion heuristics, NFKC normalization, chain analysis) are
+unaffected.
 
 ### Library Usage
 
@@ -250,17 +240,10 @@ func main() {
 
 See [`examples/simple-server/`](examples/simple-server/) for a complete working example that registers a tool, resource, and prompt.
 
-### ML Model Hot-Swap
+### ML Model Hot-Swap — WITHDRAWN 2026-11-23
 
-Reload the neural threat detection model at runtime without restarting the server:
-
-```go
-// Swap to a new ONNX model file (verifies SHA-256 hash)
-err := server.ReloadMLModel("/path/to/new_model.onnx")
-if err != nil {
-    log.Printf("model reload failed: %v", err)
-}
-```
+Runtime model reload was removed with the ML withdrawal. There is no model
+to swap; neural detection is disabled. See [docs/ML-WITHDRAWN.md](docs/ML-WITHDRAWN.md).
 
 ### Tool Poisoning Detection
 
@@ -299,11 +282,11 @@ AegisGate MCP applies 23 security layers to every request, in order:
 | 16 | **stdio Transport** | Standard MCP client transport for Claude Desktop, Cursor, and other local integrations | `transport.go` |
 | 17 | **Health Endpoint** | HTTP `/healthz`, `/readyz`, `/stats` endpoints on a separate listener | `transport.go` |
 | 18 | **Parameter Validation** | Required fields checked against each tool's `inputSchema` before execution | `handler.go` |
-| 19 | **Neural Threat Detection (L3)** | CharCNN-BiLSTM v15 model scores semantic attacks and evasion variants that regex misses. Two-tier blocking: ≥0.95 blocks independently, 0.50–0.94 requires L1/L2 corroboration | `internal/ml/` |
+| ~~19~~ | **Neural Threat Detection (L3) — WITHDRAWN 2026-11-23** | Neural detection disabled; see docs/ML-WITHDRAWN.md | `internal/ml/` |
 | 20 | **Heuristic Evasion Detection** | Detects transposition, vowel deletion, word reversal, leetspeak, encoding, splitting, and zero-width character obfuscation | `internal/ml/evasion_resistance.go` |
 | 21 | **NFKC Unicode Normalization** | Maps Unicode compatibility characters to canonical forms before scanning — defeats homoglyph and ligature attacks (full-width `Ｉｇｎｏｒｅ` → `ignore`) | `internal/ml/normalizer.go` |
 | 22 | **Tool Poisoning Detection** | Scans tool descriptions and `inputSchema` recursively for prompt injection (34 dangerous function patterns from AegisGate Scanner) at registration time — rejects poisoned tools before they're callable. Maps to OWASP MCP Top 10 M1 | `handler.go` |
-| 23 | **Evasion Detection (L2.5)** | 15 regex patterns detecting encoding (base64, URL, unicode, HTML entities), splitting (zero-width chars, interleaving), obfuscation (leet speak, padding, markup), and semantic evasion (role-play framing, instruction override). Score ≥ 0.8 blocks independently; ≥ 0.3 logs warning. Runs between L1 regex and L3 neural detection | `internal/ml/evasion_resistance.go` |
+| 23 | **Evasion Detection (L2.5)** | 15 regex patterns detecting encoding (base64, URL, unicode, HTML entities), splitting (zero-width chars, interleaving), obfuscation (leet speak, padding, markup), and semantic evasion (role-play framing, instruction override). Score ≥ 0.8 blocks independently; ≥ 0.3 logs warning. Runs after L1 regex scanning | `internal/ml/evasion_resistance.go` |
 
 ### Detection Pattern Categories (132 patterns)
 
@@ -365,10 +348,10 @@ All CLI flags have environment variable equivalents:
 | `--health-addr` | `MCP_HEALTH_ADDR` | _(empty)_ | Health endpoint listen address (empty = disabled) |
 | `--config` | `MCP_CONFIG_FILE` | _(empty)_ | JSON config file path |
 | `--demo` | `MCP_DEMO_TOOLS` | `false` | Register demo tools (ping, system_info, echo) |
-| `--ml` | `MCP_ML_ENABLED` | `false` | Enable neural threat detection (L3, requires CGO build) |
-| `--ml-shadow` | `MCP_ML_SHADOW` | `false` | ML shadow mode: log predictions but never block |
-| `--ml-threshold` | `MCP_ML_THRESHOLD` | `0.50` | ML threat score threshold (0.0–1.0) |
-| `--ml-model` | `MCP_ML_MODEL` | `./models/threat_cnn_bilstm.onnx` | Path to ONNX model file |
+| `--ml` | `MCP_ML_ENABLED` | `false` | WITHDRAWN 2026-11-23 — inert |
+| `--ml-shadow` | `MCP_ML_SHADOW` | `false` | WITHDRAWN 2026-11-23 — inert |
+| `--ml-threshold` | `MCP_ML_THRESHOLD` | `0.50` | WITHDRAWN 2026-11-23 — inert |
+| `--ml-model` | `MCP_ML_MODEL` | `./models/threat_cnn_bilstm.onnx` | WITHDRAWN 2026-11-23 — inert |
 
 ### JSON Config File
 
@@ -549,7 +532,7 @@ with unsigned clients while enforcing signatures for clients that provide them.
 | Category | Tests | Coverage |
 |----------|-------|----------|
 | Unit + integration (non-CGO) | 611 | 92.0% |
-| Unit + integration (CGO + ML) | 611 | 91.9% |
+| ~~Unit + integration (CGO + ML)~~ | — | ML withdrawn 2026-11-23 |
 | Load / stress / burst / crush / chaos (build tag: `load`) | 32 | — |
 | Benchmarks | 14 | — |
 | Fuzz targets | 3 | — |
@@ -561,7 +544,7 @@ with unsigned clients while enforcing signatures for clients that provide them.
 # Non-CGO test suite (heuristic-only, no ONNX)
 CGO_ENABLED=0 go test ./... -count=1 -timeout 120s
 
-# CGO test suite (full ML, requires libonnxruntime.so)
+# CGO test suite (ML withdrawn 2026-11-23)
 CGO_ENABLED=1 CGO_LDFLAGS="-L$(pwd)/lib/amd64 -lonnxruntime" go test ./... -count=1 -timeout 120s
 
 # With race detector (CGO only — -race requires CGO)
@@ -617,13 +600,13 @@ Validated via the k6-style load test suite (`//go:build load`):
 <summary><strong>📦 Zero Module Dependencies</strong></summary>
 
 AegisGate MCP has **zero external module dependencies**. The `go.mod` file contains
-no `require` directives. All third-party code (ONNX Runtime bindings, Unicode
-normalization, ML model) is vendored into `internal/`, `lib/`, and `models/`.
+no `require` directives. All third-party code (Unicode normalization and
+related helpers) is vendored into `internal/` and `lib/`.
 
 ```
 module github.com/aegisgatesecurity/aegisgate-mcp
 
-go 1.26.9
+go 1.27.4
 
 // Zero external module dependencies (no `require` directives).
 // All third-party code is vendored into internal/ — see NOTICE for details.
@@ -633,10 +616,9 @@ go 1.26.9
 
 | Component | License | Location |
 |-----------|---------|----------|
-| onnxruntime_go (Go bindings) | MIT | `internal/onnxruntime_go/` |
-| libonnxruntime.so (Microsoft) | MIT | `lib/amd64/`, `lib/arm64/` |
+| onnxruntime_go (Go bindings) | MIT | `internal/onnxruntime_go/` (unused; retained for reproducibility) |
+| libonnxruntime.so (Microsoft) | MIT | `lib/amd64/`, `lib/arm64/` (unused; retained for reproducibility) |
 | golang.org/x/text (Unicode norm) | BSD-3-Clause | `internal/textnorm/` |
-| CharCNN-BiLSTM v15 model | Apache-2.0 | `models/` |
 
 **Why this matters:**
 
@@ -829,7 +811,7 @@ Detailed documentation is available in the `docs/` directory:
 | [`docs/how-to-guides.md`](docs/how-to-guides.md) | Task-specific guides: custom tools, signature verification, mTLS setup |
 | [`docs/building-your-first-server.md`](docs/building-your-first-server.md) | Tutorial: build a complete secure MCP server from scratch with custom tools, RBAC, and policies |
 | [`docs/integrating-with-cursor.md`](docs/integrating-with-cursor.md) | Connect Cursor to AegisGate MCP via Streamable HTTP transport |
-| [`docs/model-card.md`](docs/model-card.md) | ML model details: architecture, training data, performance metrics |
+| [`docs/model-card.md`](docs/model-card.md) | ML model card — WITHDRAWN 2026-11-23, see docs/ML-WITHDRAWN.md |
 | [`docs/comparison.md`](docs/comparison.md) | Feature comparison: AegisGate MCP vs official MCP SDKs and bolt-on wrappers |
 | [`docs/owasp-mcp-top-10.md`](docs/owasp-mcp-top-10.md) | OWASP MCP Top 10 risk mapping — coverage for all 10 security risks |
 | [`docs/v1.3.0-roadmap.md`](docs/v1.3.0-roadmap.md) | Roadmap for SSE streaming, server-initiated notifications, resource subscriptions, and resource templates (P1–P4 complete) |
@@ -864,7 +846,6 @@ is the natural upgrade path:
 | Need | AegisGate MCP (free) | AegisGate Platform |
 |---|---|---|
 | Secure MCP server framework | ✅ 23 layers, zero deps | ✅ Embedded MCP server |
-| ML threat detection | ✅ Capped at 100 inf/min (single-server) | ✅ Unlimited, org-wide |
 | Proxy/gateway mode | ❌ Framework, not proxy | ✅ Sits between clients and all AI services |
 | OAuth 2.0 / OIDC / SSO | ❌ Bearer tokens + API keys | ✅ SAML, OIDC, JWT |
 | SIEM integration | ❌ File-based audit + Prometheus | ✅ Splunk, Elasticsearch, QRadar, Datadog (11 platforms) |

@@ -1,3 +1,5 @@
+> **⚠ 2026-11-23 — ML WITHDRAWN.** Neural (CharCNN-BiLSTM) ML detection described in this document is withdrawn; see [ML-WITHDRAWN.md](ML-WITHDRAWN.md). Deterministic regex/heuristic detection is unaffected.
+
 # OWASP MCP Top 10 — AegisGate MCP Coverage
 
 > The OWASP MCP Top 10 identifies the most critical security risks for
@@ -13,7 +15,7 @@
 | M3 | Insecure Session Management | 256-bit random session IDs + expiry + anti-hijacking | ✅ Full |
 | M4 | Excessive Autonomy / Privilege | 4-tier RBAC + Policy Engine + Chain Analysis | ✅ Full |
 | M5 | Data Exfiltration | Response scanning + chain analysis + secret redaction | ✅ Full |
-| M6 | Prompt Injection | 30 regex patterns + CharCNN-BiLSTM ML + input scanning | ✅ Full |
+| M6 | Prompt Injection | 30 regex patterns + input scanning (ML withdrawn 2026-11-23) | ✅ Full |
 | M7 | Insecure Transport | TLS + mTLS support | ✅ Full |
 | M8 | Missing Audit & Monitoring | Tamper-evident hash-chain audit log + health endpoints | ✅ Full |
 | M9 | Supply Chain Risk | Zero external module dependencies (all vendored) | ✅ Full |
@@ -117,14 +119,14 @@ external data cause the LLM to execute unintended actions.
   templates, jailbreak attempts, and override commands
 - **L2: ATLAS Compliance Scanner** — input scanner with severity scoring
   (Low/Medium/High/Critical)
-- **L3: Neural ML Detection** — CharCNN-BiLSTM v15 model (1.6M params,
+- **L3: Neural ML Detection** — WITHDRAWN 2026-11-23. Was: CharCNN-BiLSTM v15 model (1.6M params,
   <1ms CPU inference) catches semantic attacks and evasion variants that
   regex misses:
   - Leetspeak, Unicode homoglyphs, character transposition
   - Vowel deletion, word reversal, encoding tricks
   - Zero-width character obfuscation
-- **Two-tier blocking** — scores ≥0.95 block independently; scores
-  0.50–0.94 require L1/L2 corroboration (prevents false positives)
+- **Two-tier blocking** — WITHDRAWN 2026-11-23 (was: scores ≥0.95 block independently; scores
+  0.50–0.94 require L1/L2 corroboration). Deterministic L1/L2/L2.5 blocking remains in effect.
 - **NFKC Unicode Normalization** — defeats full-width and homoglyph attacks
   before scanning
 - **Input parameter scanning** — scans tool *parameters* (not just
@@ -153,7 +155,7 @@ incident response and compliance.
   entries, making post-hoc modification detectable
 - **Dual logging** — file-based (`--audit`) and in-memory (queryable)
 - **Comprehensive event types** — initialize, tool calls, auth events,
-  policy decisions, chain analysis flags, ML predictions
+  policy decisions, chain analysis flags (ML prediction events withdrawn 2026-11-23)
 - **Health endpoints** — `/healthz` (liveness), `/readyz` (readiness),
   `/stats` (real-time metrics: sessions, connections, tool calls)
 - **Structured logging** — `slog` (Go 1.21+ structured logger) with
@@ -167,9 +169,9 @@ vulnerabilities or malicious code.
 **AegisGate Defense:**
 - **Zero external module dependencies** — `go.mod` has zero `require`
   directives
-- **All third-party code vendored** — ONNX Runtime bindings, Unicode
-  normalization library, and ML model are all in `internal/`, `lib/`,
-  and `models/`
+- **All third-party code vendored** — ONNX Runtime bindings (unused; ML withdrawn 2026-11-23), Unicode
+  normalization library, and related helpers are all in `internal/` and `lib/`
+  (the ML model was removed 2026-11-23)
 - **Air-gapped deployment** — no `go mod download` needed, runs fully
   offline
 - **Reproducible builds** — no dependency resolution means identical
@@ -189,7 +191,6 @@ or trigger long-running tools.
 - **Connection limits** — max TCP connections (default 1000, -1 = unlimited)
 - **Tool execution timeout** — configurable per-call timeout (default 30s)
 - **HTTP body size cap** — Streamable HTTP limits request bodies to 1MB
-- **ML inference throttle** — 100 inferences/min, 10 burst/sec, 4 concurrent
-  (prevents ML from becoming a DoS vector)
+- **ML inference throttle** — WITHDRAWN 2026-11-23 (no ML inference occurs; the throttle and its 100 inferences/min, 10 burst/sec, 4 concurrent limits are inert)
 - **Read/write timeouts** — HTTP transport enforces 10s read header,
   30s read, 60s write, 5min idle timeouts

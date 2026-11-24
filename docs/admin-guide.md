@@ -1,3 +1,5 @@
+> **⚠ 2026-11-23 — ML WITHDRAWN.** Neural (CharCNN-BiLSTM) ML detection described in this document is withdrawn; see [ML-WITHDRAWN.md](ML-WITHDRAWN.md). Deterministic regex/heuristic detection is unaffected.
+
 # AegisGate MCP Administrator Guide
 
 **Product:** AegisGate MCP  
@@ -517,18 +519,26 @@ Both modes can be enabled simultaneously. When both are active, block rules are 
 
 ---
 
-## 7a. ML Threat Detection (L3 — Neural)
+## 7a. ML Threat Detection (L3 — Neural) — WITHDRAWN 2026-11-23
 
-AegisGate MCP includes a CharCNN-BiLSTM v15 neural model that detects
+> **Withdrawn.** Neural threat detection is disabled. The `--ml*` flags and `MCP_ML_*` variables are inert. See ML-WITHDRAWN.md.
+
+Historically, AegisGate MCP included a CharCNN-BiLSTM v15 neural model that detected
 semantic attacks and evasion variants that regex pattern matching cannot
-catch. This is the same model used by AegisGate Platform and Rampart,
-vendored with zero external module dependencies.
+catch. This was the same model used by AegisGate Platform and Rampart,
+vendored with zero external module dependencies. The model was withdrawn
+2026-11-23 (training corpus label audit failure, ~71% flip rate), removed
+from the repository, and neural detection is hard-disabled. See
+[ML-WITHDRAWN.md](ML-WITHDRAWN.md).
 
-### 7a.1 How It Works
+### 7a.1 How It Works (historical — withdrawn 2026-11-23)
 
-The model runs on every tool input parameter (string values) and on every
-tool response. It produces a threat score from 0.0 to 1.0. Two-tier
-blocking prevents false positives:
+> **Void 2026-11-23.** The following describes the withdrawn neural detector.
+> It no longer runs; the sections below are retained for reference only.
+
+The model ran on every tool input parameter (string values) and on every
+tool response. It produced a threat score from 0.0 to 1.0. Two-tier
+blocking was used to prevent false positives:
 
 | Tier | Score Range | Behavior |
 |------|-------------|----------|
@@ -536,33 +546,30 @@ blocking prevents false positives:
 | **Tier 2** | 0.50 – 0.94 | Block only if L1 (regex) or L2 (input scanner) also flagged the content |
 | **Alert** | < 0.50 | No action (below threshold) |
 
-### 7a.2 Configuration
+### 7a.2 Configuration (flags inert — withdrawn 2026-11-23)
 
 | Flag | Env Var | Default | Description |
 |------|---------|---------|-------------|
-| `--ml` | `MCP_ML_ENABLED` | `false` | Enable neural threat detection |
-| `--ml-shadow` | `MCP_ML_SHADOW` | `false` | Log predictions but never block |
-| `--ml-threshold` | `MCP_ML_THRESHOLD` | `0.50` | Threat score threshold |
-| `--ml-model` | `MCP_ML_MODEL` | `./models/threat_cnn_bilstm.onnx` | ONNX model path |
+| `--ml` | `MCP_ML_ENABLED` | `false` | WITHDRAWN 2026-11-23 — inert |
+| `--ml-shadow` | `MCP_ML_SHADOW` | `false` | WITHDRAWN 2026-11-23 — inert |
+| `--ml-threshold` | `MCP_ML_THRESHOLD` | `0.50` | WITHDRAWN 2026-11-23 — inert |
+| `--ml-model` | `MCP_ML_MODEL` | `./models/threat_cnn_bilstm.onnx` | WITHDRAWN 2026-11-23 — inert (model no longer shipped) |
 
-**Docker defaults:** ML is enabled by default in the Docker image
-(`MCP_ML_ENABLED=true`). For CLI/binary deployments, pass `--ml` or set
-`MCP_ML_ENABLED=true`.
+**Docker defaults:** prior to the withdrawal, ML was enabled by default in the
+Docker image (`MCP_ML_ENABLED=true`). Since 2026-11-23 the Dockerfile forces
+`MCP_ML_ENABLED=false` regardless of environment; the `--ml*` flags and
+`MCP_ML_*` variables are inert.
 
-### 7a.3 Shadow Mode
+### 7a.3 Shadow Mode (withdrawn 2026-11-23)
 
-Shadow mode logs all ML predictions to the audit log without blocking any
-requests. Use this for a 7-day calibration period before enabling blocking
-in production:
+Shadow mode is no longer available. The `--ml-shadow` flag is inert; no ML
+predictions are logged because no ML inference occurs.
 
-```bash
-./mcp-server --ml --ml-shadow --token your-token --demo
-```
+### 7a.4 Audit Entries (historical — withdrawn 2026-11-23)
 
-### 7a.4 Audit Entries
-
-ML blocks are recorded in the audit log with type `ml_input_blocked` or
-`ml_response_blocked`:
+ML blocks were recorded in the audit log with type `ml_input_blocked` or
+`ml_response_blocked`. No such entries are emitted after the 2026-11-23
+withdrawal (no ML inference occurs):
 
 ```json
 {
@@ -577,11 +584,10 @@ ML blocks are recorded in the audit log with type `ml_input_blocked` or
 
 | Mode | Build Command | Features |
 |------|---------------|----------|
-| **CGO (full)** | `CGO_ENABLED=1 CGO_LDFLAGS="-Llib -lonnxruntime"` | Neural + heuristic + NFKC |
-| **Non-CGO (lite)** | `CGO_ENABLED=0` | Heuristic + NFKC only (no ONNX) |
+| **CGO (full)** | `CGO_ENABLED=1 CGO_LDFLAGS="-Llib -lonnxruntime"` | Deterministic layers only (ML withdrawn 2026-11-23) |
+| **Non-CGO (lite)** | `CGO_ENABLED=0` | Deterministic + NFKC only (no ONNX) |
 
-When CGO is unavailable or the model fails to load, the server automatically
-falls back to heuristic-only detection.
+CGO no longer enables neural detection. When CGO is unavailable or the model fails to load, the server runs heuristic-only detection; since 2026-11-23 the ML path cannot be enabled at all.
 
 ---
 
@@ -871,10 +877,10 @@ When investigating an issue, work through this checklist in order:
 | `--redact-secrets` | — | — | `true` | §7.3 |
 | `--redact-placeholder` | — | — | `[REDACTED]` | §7.3 |
 | `--health-addr` | `MCP_HEALTH_ADDR` | `HealthAddr` | (disabled) | §8.1 |
-| `--ml` | `MCP_ML_ENABLED` | `MLEnabled` | `false` | §7a.2 |
-| `--ml-shadow` | `MCP_ML_SHADOW` | `MLShadowMode` | `false` | §7a.2 |
-| `--ml-threshold` | `MCP_ML_THRESHOLD` | `MLThreshold` | `0.50` | §7a.2 |
-| `--ml-model` | `MCP_ML_MODEL` | `MLModelPath` | `./models/threat_cnn_bilstm.onnx` | §7a.2 |
+| `--ml` | `MCP_ML_ENABLED` | `MLEnabled` | `false` | §7a.2 (withdrawn 2026-11-23 — inert) |
+| `--ml-shadow` | `MCP_ML_SHADOW` | `MLShadowMode` | `false` | §7a.2 (withdrawn 2026-11-23 — inert) |
+| `--ml-threshold` | `MCP_ML_THRESHOLD` | `MLThreshold` | `0.50` | §7a.2 (withdrawn 2026-11-23 — inert) |
+| `--ml-model` | `MCP_ML_MODEL` | `MLModelPath` | `./models/threat_cnn_bilstm.onnx` | §7a.2 (withdrawn 2026-11-23 — inert) |
 
 ---
 
@@ -896,7 +902,6 @@ When investigating an issue, work through this checklist in order:
   --block-secrets \
   --block-xss \
   --block-prompt-inject \
-  --ml \
   --health-addr :8082
 ```
 
