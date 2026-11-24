@@ -6,7 +6,7 @@
 # Default owner for everything
 * @jcolvin1056
 
-# ML detection internals (security-critical)
+# ML detection internals — ML WITHDRAWN 2026-11-23 (see docs/ML-WITHDRAWN.md); still security-critical
 internal/ml/              @jcolvin1056
 
 # ONNX Runtime bindings (vendored, security-critical)

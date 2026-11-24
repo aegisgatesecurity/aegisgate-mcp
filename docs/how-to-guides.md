@@ -1,3 +1,5 @@
+> **⚠ 2026-11-23 — ML WITHDRAWN.** Neural (CharCNN-BiLSTM) ML detection described in this document is withdrawn; see [ML-WITHDRAWN.md](ML-WITHDRAWN.md). Deterministic regex/heuristic detection is unaffected.
+
 # AegisGate MCP How-To Guides
 
 **Product:** AegisGate MCP — A security-first MCP server for AI agents  
@@ -915,10 +917,10 @@ Tests can be run in two modes depending on build configuration.
 ### Run All Tests
 
 ```bash
-# Non-CGO (heuristic-only, no ONNX)
+# Non-CGO (heuristic-only, no ONNX) — recommended
 CGO_ENABLED=0 go test ./... -count=1
 
-# CGO (full ML, requires libonnxruntime.so)
+# CGO (ML withdrawn 2026-11-23; requires libonnxruntime.so)
 CGO_ENABLED=1 CGO_LDFLAGS="-L$(pwd)/lib -lonnxruntime" go test ./... -count=1
 ```
 

@@ -1,3 +1,5 @@
+> **⚠ 2026-11-23 — ML WITHDRAWN.** Neural (CharCNN-BiLSTM) ML detection described in this document is withdrawn; see [ML-WITHDRAWN.md](ML-WITHDRAWN.md). Deterministic regex/heuristic detection is unaffected.
+
 # Building Your First Secure MCP Server
 
 > **AegisGate MCP** is a product of AegisGate Security, LLC.
@@ -256,7 +258,7 @@ Client Request
     ↓
 [3] Input Scanning — Layer 2: ATLAS technique mapping
     ↓
-[4] Input Scanning — Layer 3: CharCNN-BiLSTM ML detection
+[4] Input Scanning — Layer 3: (neural detection withdrawn 2026-11-23; deterministic layers active)
     ↓
 [5] Tool Poisoning Detection
     ↓
@@ -280,7 +282,7 @@ If any layer blocks the request, the tool handler never executes. The client rec
 - **Add more tools**: Call `srv.RegisterTool()` and `srv.RegisterToolHandler()` for each new tool
 - **Add RBAC tiers**: Use `mcp.TierRestricted`, `mcp.TierStandard`, `mcp.TierElevated` to control tool access
 - **Enable TLS**: See the [TLS/mTLS guide](how-to-guides.md#4-how-to-configure-tlsmtls)
-- **Enable ML detection**: Build with `CGO_ENABLED=1` for full neural threat detection (see [Deployment Guide](deployment-guide.md))
+- **ML detection**: withdrawn 2026-11-23; deterministic detection works with the default build (see [Deployment Guide](deployment-guide.md))
 - **Deploy with Docker**: See the [Deployment Guide](deployment-guide.md) for container orchestration
 
 ## Further Reading

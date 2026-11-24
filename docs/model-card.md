@@ -15,7 +15,9 @@
   Latin-1 vocabulary (256 tokens), ~6.1MB ONNX export (float32)
 - **Inference**: <1ms CPU inference via vendored ONNX Runtime (Go + CGO)
 - **SHA-256**: `99187453bedb2b8caf21500d2344f2bbe34272c0b3fd4c610c431378dc2f4fe7`
-- **Location**: `models/threat_cnn_bilstm.onnx`
+- **Location**: `models/threat_cnn_bilstm.onnx` (removed 2026-11-23 — file no longer shipped)
+
+> **Void 2026-11-23.** Every claim in "Model Details", "Intended Use", "Performance", "Two-Tier Blocking", "Audit Trail", and "Ethical Considerations" below describes the withdrawn model and is retained for historical reference only. The model was withdrawn after its training corpus failed label audit (~71% flip rate); all detection-rate and false-positive claims are void. See [ML-WITHDRAWN.md](ML-WITHDRAWN.md).
 
 > **Note:** This is the same model used by AegisGate Platform and Rampart.
 > For full training data, evaluation metrics, and ethical considerations, see
@@ -32,6 +34,8 @@
 
 ## Performance
 
+> **VOID 2026-11-23** — all metrics below are void (training corpus label audit failure). Retained for historical reference only; see [ML-WITHDRAWN.md](ML-WITHDRAWN.md).
+
 | Metric | Value |
 |--------|-------|
 | True Positive Rate (TPR) | 93.48% (test set), 100/100 evasion (full pipeline) |
@@ -43,7 +47,9 @@
 
 ## Two-Tier Blocking
 
-The MCP server uses two-tier blocking to prevent false positives:
+> **Withdrawn 2026-11-23** — two-tier blocking was removed with neural detection. Retained for historical reference only.
+
+The MCP server used two-tier blocking to prevent false positives:
 
 | Tier | Score Range | Behavior |
 |------|-------------|----------|
@@ -64,7 +70,9 @@ to heuristic detection:
 
 ## Audit Trail
 
-All ML blocks are recorded in the tamper-evident audit log:
+> **Historical (withdrawn 2026-11-23).** No `ml_*` audit entries are emitted after the withdrawal; no ML inference occurs.
+
+ML blocks were recorded in the tamper-evident audit log:
 - `ml_input_blocked` — input parameter blocked by neural detector
 - `ml_response_blocked` — tool response blocked by neural detector
 - Entries include threat score, tier, and model version

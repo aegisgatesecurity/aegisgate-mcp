@@ -167,7 +167,8 @@ security stack end-to-end at 13.0μs/request.
 # Run all benchmarks (single run, 3s per benchmark)
 CGO_ENABLED=0 go test -run=^$ -bench=. -benchmem -benchtime=3s ./...
 
-# Run with ML enabled (requires CGO + ONNX model)
+# Run with ML enabled (void 2026-11-23 — ML withdrawn; see docs/ML-WITHDRAWN.md)
+# This no longer enables any neural detection; the loader refuses all models.
 CGO_ENABLED=1 go test -run=^$ -bench=. -benchmem -benchtime=3s ./...
 
 # Run concurrent throughput benchmark only
@@ -195,8 +196,8 @@ go test -tags=load -v -timeout=120s ./...
 ## Environment
 
 - **CPU:** 40-core (benchmark results show `-40` suffix)
-- **CGO:** Enabled (ML inference available — CharCNN-BiLSTM v13 model loaded)
-- **ML Model:** threat_cnn_bilstm.onnx (loaded, adds ~1-5ms per scanned input)
+- **CGO:** Enabled (void 2026-11-23 — ML withdrawn; neural inference unavailable; see docs/ML-WITHDRAWN.md)
+- **ML Model:** threat_cnn_bilstm.onnx (void 2026-11-23 — model removed; neural detection disabled; see docs/ML-WITHDRAWN.md)
 - **Go Version:** 1.26.9
 - **Dependencies:** Zero (Go standard library only)
 - **Security Layers:** 23 (including L2.5 Evasion Detection)

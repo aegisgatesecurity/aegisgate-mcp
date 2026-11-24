@@ -21,7 +21,7 @@ between MCP clients (AI agents) and MCP servers (tools), providing 23 security l
 |-------|-----------|------|
 | L1 | Regex pattern matching (30 patterns) | Heuristic |
 | L2 | MITRE ATLAS compliance + input scanner | Heuristic |
-| L3 | CharCNN-BiLSTM neural threat detection (v15) | Neural |
+| L3 | ~~Neural threat detection~~ — WITHDRAWN 2026-11-23 (see docs/ML-WITHDRAWN.md) | — |
 | — | Bearer token / API key authentication | Core |
 | — | ECDSA P-256 signature verification | Core |
 | — | Session management with limits | Core |
@@ -44,24 +44,21 @@ between MCP clients (AI agents) and MCP servers (tools), providing 23 security l
 
 ### Dual Build Modes
 
-| Mode | CGO | ML | Binary Size | Docker Image |
-|------|-----|----|-------------| ------------|
-| Full | `CGO_ENABLED=1` | Neural (ONNX Runtime) | ~15MB | ~136MB (debian:bookworm-slim) |
+| Mode | CGO | Detection | Binary Size | Docker Image |
+|------|-----|-----------|-------------| ------------|
+| Full | `CGO_ENABLED=1` | Deterministic (ML withdrawn 2026-11-23) | ~15MB | ~136MB (debian:bookworm-slim) |
 | Lite | `CGO_ENABLED=0` | Heuristic-only | ~8MB | ~90MB (debian:bookworm-slim) |
 
-### Two-Tier Neural Blocking (L3)
+### Neural Blocking (L3) — WITHDRAWN 2026-11-23
 
-| Tier | Score | Action |
-|------|-------|--------|
-| High confidence | ≥ 0.95 | Block independently |
-| Corroborated | 0.50–0.94 | Block only with L1/L2 corroboration |
-| Alert-only | 0.50–0.94 (no corroboration) | Log alert, allow request |
+Neural scoring is disabled. Blocking decisions are made by deterministic layers
+(L1 regex, L2 input scanning, L2.5 evasion heuristics). See docs/ML-WITHDRAWN.md.
 
 ### Supply Chain Security
 
 - **Zero external module dependencies** (no `require` directives in go.mod)
-- All third-party code vendored: onnxruntime_go (MIT), libonnxruntime.so (MIT, Microsoft), golang.org/x/text (BSD-3-Clause)
-- Model integrity verified via SHA-256 hash at load time
+- All third-party code vendored: golang.org/x/text (BSD-3-Clause); ONNX Runtime bindings retained but unused (ML withdrawn 2026-11-23)
+- Model integrity verification removed with the model (ML withdrawn 2026-11-23)
 - Tamper-evident audit log (SHA-256 hash chain)
 
 ## Security Features
@@ -152,7 +149,7 @@ We will acknowledge receipt within 48 hours and provide a fix or mitigation with
 ## Audit Log Data Handling
 
 MCP audit logs store detection metadata including tool names, matched patterns,
-severity levels, and ML threat scores. **Original secret values are never stored** —
+severity levels (and, historically, ML threat scores — ML withdrawn 2026-11-23). **Original secret values are never stored** —
 they are redacted to `[REDACTED]` before any logging occurs. PII values are partially
 masked before logging.
 

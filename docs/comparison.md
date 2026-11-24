@@ -1,6 +1,8 @@
+> **⚠ 2026-11-23 — ML WITHDRAWN.** Neural (CharCNN-BiLSTM) ML detection described in this document is withdrawn; see [ML-WITHDRAWN.md](ML-WITHDRAWN.md). Deterministic regex/heuristic detection is unaffected.
+
 # Comparison: AegisGate MCP vs Other MCP Security Approaches
 
-> **TL;DR:** AegisGate MCP is the only zero-dependency, ML-enhanced, 22-layer
+> **TL;DR:** AegisGate MCP is the only zero-dependency, 22-layer
 > security framework for MCP servers. Everything else is either an unsecured
 > SDK or a bolt-on wrapper.
 
@@ -18,7 +20,7 @@
 | **Policy engine** | ❌ | ❌ | ❌ | ✅ Allow/deny + conditions + time windows |
 | **Audit logging** | ❌ | ❌ | ❌ | ✅ Tamper-evident hash chain |
 | **Threat detection (regex)** | ❌ | ❌ | ✅ Basic | ✅ 30 patterns |
-| **Threat detection (ML)** | ❌ | ❌ | ❌ | ✅ CharCNN-BiLSTM v15 |
+| **Threat detection** | ❌ | ❌ | ❌ | ✅ 132 regex patterns + evasion heuristics (ML withdrawn 2026-11-23) |
 | **Tool poisoning detection** | ❌ | ❌ | ❌ | ✅ Registration-time scan |
 | **Response scanning** | ❌ | ❌ | ✅ Basic | ✅ PII + secrets + XSS + injection |
 | **Secret redaction** | ❌ | ❌ | ❌ | ✅ Configurable |
@@ -28,7 +30,7 @@
 | **Session management** | ❌ | ✅ Basic | ❌ | ✅ 256-bit IDs + anti-hijacking |
 | **TLS / mTLS** | ❌ | ❌ | ❌ | ✅ |
 | **Health endpoints** | ❌ | ✅ | ❌ | ✅ /healthz, /readyz, /stats |
-| **Model hot-swap** | ❌ | ❌ | ❌ | ✅ Runtime ONNX reload |
+| **Model hot-swap** | ❌ | ❌ | ❌ | ❌ Removed with ML withdrawal 2026-11-23 |
 | **External dependencies** | npm/pip (many) | Go modules | pip | **Zero** |
 | **Air-gapped deployment** | ❌ | ❌ | ❌ | ✅ |
 | **License** | MIT | MIT | MIT | Apache 2.0 |
@@ -76,8 +78,7 @@ AegisGate MCP is built from the ground up as a security-first framework:
 - **22 security layers** integrated into the request pipeline — not bolted on
 - **Zero external dependencies** — no `require` directives in go.mod, all
   third-party code vendored into `internal/`
-- **ML threat detection** — CharCNN-BiLSTM v15 neural model with <1ms CPU
-  inference, the same model used by AegisGate Platform and Rampart
+- **Threat detection** — 132 regex patterns + evasion heuristics (ML withdrawn 2026-11-23)
 - **Tool poisoning detection** — scans tool descriptions and input schemas
   for prompt injection at registration time, before the tool is ever callable
 - **Chain analysis** — tracks tool call sequences within sessions to detect
@@ -106,6 +107,6 @@ AegisGate MCP is built from the ground up as a security-first framework:
 | `go mod download` needed | N/A (npm/pip) | N/A | **No** |
 
 AegisGate MCP's `go.mod` has zero `require` directives. All third-party code
-(ONNX Runtime bindings, Unicode normalization, ML model) is vendored into
-`internal/`, `lib/`, and `models/`. This eliminates the entire class of
+(Unicode normalization and related helpers) is vendored into
+`internal/` and `lib/`. This eliminates the entire class of
 supply chain attacks that plague the npm/PyPI ecosystems.
