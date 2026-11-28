@@ -1,4 +1,10 @@
 # Changelog
+## [1.8.2] - 2026-11-27 — Dependency & Toolchain Security Bump
+
+- **Go 1.27.3 → 1.27.4** (GO-2026-6859: net/http MaxBytesReader race — security-relevant toolchain fix).
+- **trufflehog 3.99.7 → 3.100.0**.
+- No product-surface changes; deterministic tool screening is unchanged. The companion Platform release (v6.0.0) carries the embedded-MCP additions (audit query API, typed `ToolPoisoningError`, malicious tool-description registration rejection).
+
 ## [1.8.1] - 2026-11-23 — ML Withdrawn
 
 - `models/threat_cnn_bilstm.onnx` removed; ML detector hard-disabled; all detection-rate claims void. Deterministic tool screening unaffected. See docs/ML-WITHDRAWN.md.
